@@ -1,5 +1,6 @@
 # workspace_eclipse
-Contém configurações básica do eclipse
+Minhas configurações personalizadas do eclipse
+
 # Modo de usar
 cd workspace
 
