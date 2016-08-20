@@ -1,0 +1,308 @@
+<?php
+namespace Model\Client;
+date_default_timezone_set("America/Sao_Paulo");
+ini_set('memory_limit', '512M');
+ini_set('max_execution_time', 300);
+if(strcmp(basename($_SERVER['SCRIPT_NAME']), basename(__FILE__)) === 0){ exit("Acesso negado");}
+// ini_set("display_errors",1);
+// ini_set("display_startup_erros",1);
+// error_reporting(E_ALL);
+
+use Model\Banco\SistemaConexao;
+use Model\Client\SistemaUsuario;
+use Model\Timesheet\Aprovar\CarregarDados;
+use Model\Timesheet\Aprovar\SomaDeHora;
+use Model\Timesheet\Aprovar\ResumoDosMeusCentrosDeCusto;
+use Model\Timesheet\Aprovar\ListaDeTimesheetParaAprovar;
+use Model\Timesheet\Aprovar\NotificaConclusaoAprovacao;
+use Model\Timesheet\Aprovar\Salva;
+use Model\Timesheet\Aprovar\HistoricoNota;
+use Model\Timesheet\Aprovar\CentroDeCustoTimesheetAprovar;
+
+class TimesheetAprovar extends Client {
+	
+	private $listMeusCentroDeCusto;
+	private $listMinhasHierarquia;
+	private $listMeusColaborador;
+	private $listHorasDosMeusColaborador;
+	private $listSindicato;
+	private $listHorasDosOutrosColaborador;
+	private $listCcDosOutrosColaborador;
+	private $listHierarquiaDosOutrosColaborador;
+	private $listCcMeuDosOutrosColaborador;
+	private $listOutrosColaborador;
+	private $listTotalHoraMeusColaboradores;
+	private $listTotalHoraOutrosColaboradores;
+	private $somaDeHora;
+	private $usuarioLogado;//[sistemaUsuario=>sistemaUsuario[], colaborador=>colaboradorLogado[], sistemaRota=>sistemaRota, sistemaPerfil=>sistemaPerfil]
+	
+	public function __construct($aRequest, $aLazy = true) {
+		parent::__construct($aRequest, $aLazy);
+		$this->somaDeHora = new SomaDeHora();
+		$this->listHorasDosOutrosColaborador = array();
+		$this->listCcDosOutrosColaborador = array();
+		$this->listHierarquiaDosOutrosColaborador = array();
+		$this->listCcMeuDosOutrosColaborador = array();
+		$this->listMeusColaborador = array();
+		$this->listMinhasHierarquia = array();
+		$this->listMeusCentroDeCusto = array();
+		$this->listHorasDosMeusColaborador = array();
+		$this->listOutrosColaborador = array();
+		$this->listSindicato = array();
+		$this->listTotalHoraMeusColaboradores = array();
+		$this->listTotalHoraOutrosColaboradores = array();
+		$this->usuarioLogado = $this->pegarUsuarioLogado();
+
+	}
+	function __destruct() {}
+	
+	//pega informações do usuário logado
+	private function pegarUsuarioLogado(){
+		//verifica a autenticação
+		$request = $this->_request;
+		$request['params'] = 'aprovar_timesheet';
+		$sistemaUsuario = new SistemaUsuario($request,true);
+		$logado = $sistemaUsuario->verificarAcesso();
+		return $logado;
+	}
+	
+	private function carregarDados(){
+		$carregarDados = new CarregarDados($this->usuarioLogado, $this->_request);
+		$dados = $carregarDados->dados();
+		$this->listMeusCentroDeCusto = $dados['listMeusCentroDeCusto'];
+		$this->listMinhasHierarquia = $dados['listMinhasHierarquia'];
+		$this->listMeusColaborador = $dados['listMeusColaborador'];
+		$this->listHorasDosMeusColaborador = $dados['listHorasDosMeusColaborador'];
+		$this->listSindicato = $dados['listSindicato'];
+		$this->listHorasDosOutrosColaborador = $dados['listHorasDosOutrosColaborador'];
+		$this->listCcDosOutrosColaborador = $dados['listCcDosOutrosColaborador'];
+		$this->listHierarquiaDosOutrosColaborador = $dados['listHierarquiaDosOutrosColaborador'];
+		$this->listCcMeuDosOutrosColaborador = $dados['listCcMeuDosOutrosColaborador'];
+		$this->listOutrosColaborador = $dados['listOutrosColaborador'];
+		$this->listTotalHoraMeusColaboradores = $dados['listTotalHoraMeusColaboradores'];
+		$this->listTotalHoraOutrosColaboradores = $dados['listTotalHoraOutrosColaboradores'];
+		return $dados;
+	}
+
+	public function notificar(){
+		$notifica = new NotificaConclusaoAprovacao($this->carregarDados(), $this->usuarioLogado, $this->_request);
+		return $notifica->notificar();
+	}
+	
+	private function formatarCpf($aCpf){
+		$cpf = substr($aCpf,0,3).'.'.substr($aCpf,3,3).'.'.substr($aCpf,6,3).'-'.substr($aCpf,9,2);
+		return $cpf;
+	}
+	/////////////////////
+	public function somarHoras($aColaboradorId, $aListaDeHora, $aSindicato){
+		return $this->somaDeHora->somarHoras($aColaboradorId, $aListaDeHora, $aSindicato);
+	}
+
+	/**
+	* Lista os timesheet que não estão com o status de finalizado
+	**/
+	public function listTimesheet(){
+		$result = array();
+		$sql = "
+			SELECT
+				t.id as id,
+				t.ano as ano,
+				t.mes as mes,
+				t.status as status
+			FROM
+				timesheet t
+			WHERE
+				t.status != 'Processado'
+				and t.status != 'Bloqueado'
+				and t.status != 'Cancelado'
+		";
+		$ps = SistemaConexao::getInstance()->prepare($sql);
+		$ps->execute();
+		while($row = $ps->fetch(\PDO::FETCH_ASSOC)){
+			$result[] = $row;
+		}
+		return $result;
+	}
+
+	/**
+	 * Retorna um resumo do centro de custo, com a quantidade de colaboradores, horas e papel do gestor
+	 * @return type
+	 */
+	public function resumoMeusCentrosDeCusto(){
+		/*$resumoMeusCentrosDeCusto = new ResumoDosMeusCentrosDeCusto($this->carregarDados(), $this->usuarioLogado);
+		return $resumoMeusCentrosDeCusto->resumo();*/
+		$c = new CentroDeCustoTimesheetAprovar($this->_request);
+		$result = $c->listar();
+		$lista = array();
+		foreach ($result as $v){
+			$lista[] = $v->toArray();
+		}
+		usort($lista, array($this,"ordenar"));
+		
+		return $lista;
+	}
+	
+	private function ordenar($a, $b){
+		if($a['ccNome'] != $b['ccNome']){
+			return strcasecmp($a['ccNome'] ,$b['ccNome']);
+		}
+	
+		if($a['tipo'] == 'centroDeCusto'){
+			return -1;
+		}
+		
+		if($b['tipo'] == 'centroDeCusto'){
+			return 1;
+		}
+	
+		return strcasecmp($a['hierarquia'], $b['hierarquia']);
+	}
+
+	/**
+	* Lista os colaboradores conforme o filtro
+	**/
+	public function listarTimesheetParaAprovar(){
+		$lista = new ListaDeTimesheetParaAprovar($this->carregarDados(), $this->usuarioLogado, $this->_request);
+		return $lista->resumo();
+	}
+
+	/**
+	* Lista os colaboradores conforme o filtro
+	**/
+	public function listarTimesheetParaAprovarRelatorio(){
+		$lista = new ListaDeTimesheetParaAprovar($this->carregarDados(), $this->usuarioLogado, $this->_request);
+		$result = array();
+		foreach($lista->resumo() as $v){
+			$result[] = [
+				'Colaborador'=>$v['cNome'],
+				'CPF'=>	$this->formatarCpf($v['cCpf']),
+				'Projeto'=>	$v['ccNome'],
+				'CodProjeto'=>$v['ccCodigo'],
+				'Hierarquia'=>$v['hNome'],
+				'CodHierarquia'=>$v['hCodigo'],
+				'STATUS'=>$v['status'],
+				'HN'=>number_format($v['hn'],1,',','.'),
+				'HE'=>number_format($v['he'],1,',','.'),
+				'SA'=>number_format($v['so'],1,',','.'),
+				'AN'=>number_format($v['an'],1,',','.'),
+				'BH'=>number_format($v['bh'],1,',','.'),
+				'UB'=>number_format($v['ub'],1,',','.'),
+				'F'=>number_format($v['fe'],1,',','.')
+			];
+		}
+		return $result;
+	}
+	
+	/**
+	* Lista os colaboradores conforme o filtro
+	**/
+	public function listarTimesheetParaAprovarRelatorioTudo(){
+		$this->carregarDados();
+		$result = array();
+		
+		$listaTemTimesheet = [];
+		foreach ($this->listHorasDosOutrosColaborador as $key => $value) {
+			$listaTemTimesheet[$value['colaborador_id']] = ['status'=>$value['status'], 'cc'=>$value['projeto_id']];
+		}
+		
+		foreach ($this->listHorasDosMeusColaborador as $key => $value) {
+			$listaTemTimesheet[$value['colaborador_id']] = ['status'=>$value['status'], 'cc'=>$value['projeto_id']];
+		}
+		
+		foreach($this->listMeusColaborador as $k => $v){
+			$sindicato = $this->listSindicato[7];
+			if(isset($this->listSindicato[$v['cSindicatoId']])){
+				$sindicato = $this->listSindicato[$v['cSindicatoId']];
+			}
+			$horas = $this->somaDeHora->somarHoras($v['cId'], null, $sindicato);
+			if(isset($this->listTotalHoraMeusColaboradores[$v['cId']])){
+				$horas = $this->somaDeHora->somarHoras($v['cId'], $this->listTotalHoraMeusColaboradores[$v['cId']], $sindicato);
+			}
+			
+			$hNome = '';
+			$hCodigo = '';
+			if(isset($this->listMinhasHierarquia[$v['cHierarquiaId']])){
+				$hNome = $this->listMinhasHierarquia[$v['cHierarquiaId']]['hNome'];
+				$hCodigo = $this->listMinhasHierarquia[$v['cHierarquiaId']]['hCodigo'];
+			}
+			
+			$status = ['status'=>'Pendente'];
+			if(isset($listaTemTimesheet[$v['cId']])){
+				$status = $listaTemTimesheet[$v['cId']];
+			}
+			
+			$result[] = [
+				'Colaborador'=>$v['cNome'],
+				'CPF'=>	$this->formatarCpf($v['cCpf']),
+				'Projeto'=>	$this->listMeusCentroDeCusto[$v['cCentroDeCustoId']]['ccNome'],
+				'CodProjeto'=>$this->listMeusCentroDeCusto[$v['cCentroDeCustoId']]['ccCodigo'],
+				'Hierarquia'=>$hNome,
+				'CodHierarquia'=>$hCodigo,
+				'STATUS'=>$horas['status'],//$status['status'],
+				'HN'=>number_format($horas['normal'],1,',','.'),	
+				'HE'=>number_format($horas['extra'],1,',','.'),
+				'SA'=>number_format($horas['sobreaviso'],1,',','.'),
+				'AN'=>number_format($horas['noturno'],1,',','.'),
+				'BH'=>number_format($horas['banco'],1,',','.'),
+				'UB'=>number_format($horas['usoBanco'],1,',','.'),
+				'F'=>number_format($horas['ferias'],1,',','.')
+			];
+		}
+		
+		foreach($this->listOutrosColaborador as $k => $v){
+			$sindicato = $this->listSindicato[7];
+			if(isset($this->listSindicato[$v['cSindicatoId']])){
+				$sindicato = $this->listSindicato[$v['cSindicatoId']];
+			}
+			$horas = $this->somaDeHora->somarHoras($v['cId'], $this->listHorasDosOutrosColaborador, $sindicato);
+			
+			$hNome = '';
+			$hCodigo = '';
+			if(isset($this->listHierarquiaDosOutrosColaborador[$v['cHierarquiaId']])){
+				$hNome = $this->listHierarquiaDosOutrosColaborador[$v['cHierarquiaId']]['hNome'];
+				$hCodigo = $this->listHierarquiaDosOutrosColaborador[$v['cHierarquiaId']]['hCodigo'];
+			}
+			
+			$status = ['status'=>'Pendente'];
+			if(isset($listaTemTimesheet[$v['cId']])){
+				$status = $listaTemTimesheet[$v['cId']];
+			}
+			
+			$result[] = [
+				'Colaborador'=>$v['cNome'],
+				'CPF'=>	$this->formatarCpf($v['cCpf']),
+				'Projeto'=>	$this->listCcDosOutrosColaborador[$v['cCentroDeCustoId']]['ccNome'],
+				'CodProjeto'=>$this->listCcDosOutrosColaborador[$v['cCentroDeCustoId']]['ccCodigo'],
+				'Hierarquia'=>$hNome,
+				'CodHierarquia'=>$hCodigo,
+				'STATUS'=>$horas['status'],//$status['status'],
+				'HN'=>number_format($horas['normal'],1,',','.'),	
+				'HE'=>number_format($horas['extra'],1,',','.'),
+				'SA'=>number_format($horas['sobreaviso'],1,',','.'),
+				'AN'=>number_format($horas['noturno'],1,',','.'),
+				'BH'=>number_format($horas['banco'],1,',','.'),
+				'UB'=>number_format($horas['usoBanco'],1,',','.'),
+				'F'=>number_format($horas['ferias'],1,',','.')
+			];
+		}
+		
+		return $result;
+	}
+
+	public function aprovar(){
+		$salva = new Salva($this->_request, $this->usuarioLogado);
+		return $salva->salvar();
+	}
+
+	/**
+	 * Carrega o historico de notas com base no id do colaborador e do id do timesheet
+	 * @return lista de nota[id,tipo,remetenteId,remetenteNome,destinatario,assunto,texto,nivel,status,data]
+	 */
+	public function listarHistoricoDeNota(){
+		$historico = new HistoricoNota($this->_request);
+		return $historico->listarNota();
+	}
+
+}
+
+?>

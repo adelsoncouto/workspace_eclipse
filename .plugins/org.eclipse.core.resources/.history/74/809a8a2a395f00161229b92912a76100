@@ -1,0 +1,720 @@
+<?php
+
+namespace Model\Client;
+
+ini_set('memory_limit', '512M');
+ini_set('max_execution_time', 300);
+
+use Model\Banco\SistemaConexao;
+use Model\Client\Client;
+use Model\Banco\Util;
+use Model\Model\Colaborador as ColaboradorModel;
+use Model\Model\ColaboradorTurno;
+
+class Colaborador extends Client {
+	private $usuarioLogado;
+	public function __construct($aRequest, $aLazy = true){
+		parent::__construct($aRequest, $aLazy);
+	}
+	
+	public function __destruct(){
+	}
+	
+	/**
+	 * Método responsável por retornar os turnos do colaborador
+	 */
+	public function turno(){
+		
+		SistemaUsuario::validarUusuario("Colaborador", $this->_request);
+		
+		if(empty($this->_request["params"])){
+			throw new \Exception("Informe colaborador inválido",
+					-debug_backtrace()[0]["line"]);
+		}
+		
+		$turno = new ColaboradorTurno();
+		$listaTurno = $turno->buscarPorColaborador(
+				$this->_request["params"]);
+		$result = [];
+		
+		/** @var \Model\Model\ColaboradorTurno $vTurno */
+		foreach($listaTurno as $vTurno){
+			$result[] = $vTurno->toArray();
+		}
+		
+		return $result;
+		
+	}
+	
+	/**
+	 * Interface responsável por retornar uma lista de colaboradores com base no
+	 * nome, empresa ou centro de custo
+	 * 
+	 * @param
+	 *        	[params:[nome,empresa,centroDeCusto]]
+	 * @return array [[id,nome,cpf,empresaNome,empresaId, centroDeCustoNome, centroDeCustoId],...]
+	 */
+	public function consultarColaborador(){
+		
+		// autentica
+		$usuario = SistemaUsuario::validarUusuario("colaborador", $this->_request);
+		
+		// verifica tipo de acesso
+		$crud = explode(',', $usuario['acesso']['crud']);
+		
+		// empresa informada
+		$empresa = empty($this->_request['params']['empresa']) ? "" : " and cc.empresa_id=:empresa ";
+		
+		// centro de custo informado
+		$centroDeCusto = empty($this->_request['params']['centroDeCusto']) ? "" : " and c.centro_de_custo_id=:centroDeCusto ";
+		
+		// nome do colaborador informado
+		$colaborador = empty($this->_request['params']['colaborador']) ? "" : " and c.nome like :colaborador ";
+		
+		$filtro = ""; // acesso global
+		if($crud[4] == 1){ // acesso por nível
+			$filtro = "
+					and (
+						cc.diretor_id =:id
+						or cc.gerente_operacao_id =:id
+						or cc.gerente_id =:id
+						or h.coordenador_id =:id
+						or h.lider_id =:id
+						or h.supervisor_id =:id
+					)";
+		}
+		$sql = "
+				SELECT
+					c.id 				id,
+					c.nome	 	nome,
+					c.cpf				cpf,
+					e.nome 		empresaNome,
+					e.id 				empresaId,
+					cc.nome		centroDeCustoNome,
+					cc.id				centroDeCustoId
+				FROM
+					colaborador c
+					left join centro_de_custo cc on cc.id = c.centro_de_custo_id
+					left join hierarquia h on h.id = c.hierarquia_id
+					left join empresa e on e.id = c.empresa_id 
+				WHERE
+					c.id > 1
+					" . $colaborador . "
+					" . $filtro . "
+					" . $empresa . "
+					" . $centroDeCusto . "
+				ORDER BY
+					e.nome,
+					cc.nome,
+					c.nome
+				LIMIT
+					8
+				";
+		$ps = SistemaConexao::getInstance()->prepare($sql);
+		echo $sql;
+		if($colaborador != ""){
+			$ps->bindValue(':colaborador', '%' . $this->_request['params']['colaborador'] . '%');
+		}
+		
+		if($filtro != ""){
+			$ps->bindValue(':id', $usuario['colaborador']['id']);
+		}
+		
+		if($empresa != ""){
+			$ps->bindValue(':empresa', $this->_request['params']['empresa']);
+		}
+		
+		if($centroDeCusto != ""){
+			$ps->bindValue(':centroDeCusto', $this->_request['params']['centroDeCusto']);
+		}
+		
+		$ps->execute();
+		$result = array();
+		while($row = $ps->fetch(\PDO::FETCH_ASSOC)){
+			$result[] = $row;
+		}
+		return $result;
+	}
+	
+	/**
+	 * Interface responsável por retornar a lista dos centros de custos que o usuário pode alocar colaborador
+	 * 
+	 * @param
+	 *        	[params:[centroDeCusto,empresa]]
+	 */
+	public function consultarCentroDeCusto(){
+		
+		// autentica
+		$usuario = SistemaUsuario::validarUusuario("colaborador", $this->_request);
+		
+		// verifica tipo de acesso
+		$crud = explode(',', $usuario['acesso']['crud']);
+		
+		$gestao = ""; // acesso global
+		if($crud[4] == 1){ // acesso por nível
+			$gestao = " 
+					and (
+						cc.diretor_id =:id
+						or cc.gerente_operacao_id =:id
+						or cc.gerente_id =:id
+						or h.coordenador_id =:id
+						or h.lider_id =:id
+						or h.supervisor_id =:id
+					) ";
+		}
+		
+		// filtra por empresa
+		$empresa = empty($this->_request['params']['empresa']) ? "" : " and cc.empresa_id = :empresa ";
+		
+		$sql = "SELECT 
+						cc.* 
+					FROM 
+						centro_de_custo cc
+						left join hierarquia h on h.centro_de_custo_id = cc.id
+					WHERE 
+						cc.nome like :nome 
+						" . $empresa . " 
+						" . $gestao . " 
+					GROUP BY
+						cc.id
+					ORDER BY 
+						nome 
+					LIMIT 
+						8";
+		
+		$ps = SistemaConexao::getInstance()->prepare($sql);
+		if(!empty($this->_request['params']['centroDeCusto'])){
+			$ps->bindValue(':nome', '%' . $this->_request['params']['centroDeCusto'] . '%');
+		}else{
+			$ps->bindValue(':nome', '%');
+		}
+		
+		if($empresa != ""){
+			$ps->bindValue(':empresa', $this->_request['params']['empresa']);
+		}
+		if($gestao != ""){
+			$ps->bindValue(':id', $usuario['colaborador']['id']);
+		}
+		$ps->execute();
+		
+		$lista = array();
+		while($row = $ps->fetch(\PDO::FETCH_ASSOC)){
+			$r = array();
+			foreach($row as $k => $v){
+				$r[Util::underlineToMaiuscula($k)] = $v;
+			}
+			$lista[] = $r;
+		}
+		
+		// adicionar hierarquia
+		$sqlFilial = "SELECT * FROM hierarquia WHERE centro_de_custo_id =:id";
+		foreach($lista as $ka => $va){
+			$ps = SistemaConexao::getInstance()->prepare($sqlFilial);
+			$ps->bindValue(":id", $va['id']);
+			$ps->execute();
+			$hierarquia = array();
+			while($row = $ps->fetch(\PDO::FETCH_ASSOC)){
+				$r = array();
+				foreach($row as $k => $v){
+					$r[Util::underlineToMaiuscula($k)] = $v;
+				}
+				$hierarquia[] = $r;
+			}
+			$lista[$ka]["hierarquia"] = $hierarquia;
+		}
+		
+		return $lista;
+	}
+	
+	/**
+	 * Interface responsável por retornar a lista das empresas em que o usuário pode alocar colaborador
+	 * 
+	 * @param
+	 *        	[params:empresaNome]
+	 */
+	public function consultarEmpresa(){
+		// autentica
+		$usuario = SistemaUsuario::validarUusuario("colaborador", $this->_request);
+
+		$crud = explode(',', $usuario['acesso']['crud']);
+		$filtro = "";
+		if($crud[4] == 1){ // acesso por nível
+			$meusCentrosDeCusto = $this->consultarCentroDeCusto();
+			$filtro = "(-1";
+			foreach($meusCentrosDeCusto as $k => $v){
+				if(!empty($v["empresaId"])){
+					$filtro .= "," . $v['empresaId'];
+				}
+			}
+			if($filtro != "(-1"){
+				$filtro = " WHERE id in " . $filtro . ") ";
+			}else{
+				$filtro = "";
+			}
+		}
+		
+		$lista = array();
+		
+		$sql = "SELECT * FROM empresa $filtro ORDER BY nome";
+		$ps = SistemaConexao::getInstance()->prepare($sql);
+		$ps->execute();
+		$lista = array();
+		while($row = $ps->fetch(\PDO::FETCH_ASSOC)){
+			$r = array();
+			foreach($row as $k => $v){
+				$r[Util::underlineToMaiuscula($k)] = $v;
+				if($k == 'cnpj'){
+					$r[Util::underlineToMaiuscula($k)] = preg_replace("/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/", "$1.$2.$3/$4-$5", $v);
+				}
+			}
+			$lista[] = $r;
+		}
+		
+		$sqlFilial = "SELECT * FROM filial WHERE empresa_id=:id ORDER BY nome";
+		foreach($lista as $ke => $ve){
+			$ps = SistemaConexao::getInstance()->prepare($sqlFilial);
+			$ps->bindValue(':id', $ve['id']);
+			$ps->execute();
+			$listFilial = array();
+			while($row = $ps->fetch(\PDO::FETCH_ASSOC)){
+				$r = array();
+				foreach($row as $k => $v){
+					$r[Util::underlineToMaiuscula($k)] = $v;
+					if($k == 'cnpj'){
+						$r[Util::underlineToMaiuscula($k)] = preg_replace("/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/", "$1.$2.$3/$4-$5", $v);
+					}
+				}
+				$listFilial[] = $r;
+			}
+			$lista[$ke]['listFilial'] = $listFilial;
+		}
+		
+		return $lista;
+	}
+	
+	/**
+	 * Interface responsável por gerar o relatório de acordo com os filtros
+	 * 
+	 * @param
+	 *        	[params:empresa,colaborador,centroDeCusto] todos são opcionais e se informado deve ser o id
+	 */
+	public function buscar(){
+		// autentica
+		$usuario = SistemaUsuario::validarUusuario("colaborador", $this->_request);
+		
+		// verifica tipo de acesso
+		$crud = explode(',', $usuario['acesso']['crud']);
+		
+		// empresa informada
+		$empresa = empty($this->_request['params']['empresa']) ? "" : " and c.empresa_id=:empresa ";
+		
+		// centro de custo informado
+		$centroDeCusto = empty($this->_request['params']['centroDeCusto']) ? "" : " and c.centro_de_custo_id=:centroDeCusto ";
+		
+		// id do colaborador informado
+		$colaborador = empty($this->_request['params']['colaborador']) ? "" : " and c.id=:colaborador ";
+		
+		$filtro = ""; // acesso global
+		if($crud[4] == 1){ // acesso por nível
+			$filtro = "
+					and (
+						cc.diretor_id =:id
+						or cc.gerente_operacao_id =:id
+						or cc.gerente_id =:id
+						or h.coordenador_id =:id
+						or h.lider_id =:id
+						or h.supervisor_id =:id
+					)";
+		}
+		
+		$sql = "SELECT c.* FROM colaborador c WHERE 1=1 " . $empresa . " " . $centroDeCusto . " " . $colaborador . " ORDER BY c.nome";
+		
+		$ps = SistemaConexao::getInstance()->prepare($sql);
+		
+		if($colaborador != ""){
+			$ps->bindValue(':colaborador', $this->_request['params']['colaborador']);
+		}
+		
+		if($empresa != ""){
+			$ps->bindValue(':empresa', $this->_request['params']['empresa']);
+		}
+		
+		if($centroDeCusto != ""){
+			$ps->bindValue(':centroDeCusto', $this->_request['params']['centroDeCusto']);
+		}
+		
+		$ps->execute();
+		$result = array();
+		while($row = $ps->fetch(\PDO::FETCH_ASSOC)){
+			$r = array();
+			foreach($row as $k => $v){
+				$r[Util::underlineToMaiuscula($k)] = $v;
+				if($k == "uf_emissor_id"){
+					$r["ufEmissor"] = $this->buscaPorId("uf", $v);
+				}
+				if($k == "ctps_uf_id"){
+					$r["ctpsUfId"] = $this->buscaPorId("uf", $v);
+				}
+				if($k == "sexo_id"){
+					$r["sexo"] = $this->buscaPorId("sexo", $v);
+				}
+				if($k == "estado_civil_id"){
+					$r["estadoCivil"] = $this->buscaPorId("estadoCivil", $v);
+				}
+				if($k == "uf_res_id"){
+					$r["ufRes"] = $this->buscaPorId("uf", $v);
+				}
+				if($k == "cargo_id"){
+					$r["cargo"] = $this->buscaPorId("cargo", $v);
+				}
+				if($k == "hierarquia_id"){
+					$r["hierarquia"] = $this->buscaPorId("hierarquia", $v);
+				}
+				if($k == "situacao_id"){
+					$r["situacao"] = $this->buscaPorId("situacao", $v);
+				}
+				if($k == "turno_id"){
+					$r["turno"] = $this->buscaPorId("turno", $v);
+				}
+				if($k == "tipo_contratacao_id"){
+					$r["tipoContratacao"] = $this->buscaPorId("tipoContratacao", $v);
+				}
+				if($k == "empresa_id"){
+					$r["empresa"] = $this->buscaPorId("empresa", $v);
+				}
+				if($k == "filial_id"){
+					$r["filial"] = $this->buscaPorId("filial", $v);
+				}
+				if($k == "sindicato_id"){
+					$r["sindicato"] = $this->buscaPorId("sindicato", $v);
+				}
+				if($k == "centro_de_custo_id"){
+					$r["centroDeCusto"] = $this->buscaPorId("centroDeCusto", $v);
+				}
+			}
+			$result[] = $r;
+		}
+		return $result;
+	}
+	
+	/**
+	 * Método responsável por retornar um colaborador com base no id recebido
+	 * 
+	 * @param
+	 *        	[params:idDoColaborador] informe o id do colaborador
+	 */
+	public function colaboradorParaEditar(){
+		
+		// verifica se foi informado um id de colaborador
+		if(empty($this->_request['params'])){
+			throw new \Exception("Informe o id do colaborador", -4);
+		}
+		
+		// verifica se o usuário está autenticado
+		$usuario = SistemaUsuario::validarUusuario("colaborador", $this->_request);
+		
+		$colab = new ColaboradorModel($this->_request['params']);
+		$colab->setAdmissao($this->formatData($colab->getAdmissao()));
+		$colab->setNascimento($this->formatData($colab->getNascimento()));
+		$colab->setDataDemissao($this->formatData($colab->getDataDemissao()));
+		$colab->setDataEmissao($this->formatData($colab->getDataEmissao()));
+		
+		$cTurno = new ColaboradorTurno();
+		$lTurno = $cTurno->listarPorWhere("colaboradorId=:cId", [
+				":cId"=> $colab->getId() 
+		], "inicio");
+		
+		// print_r($lTurno);
+		
+		$colaborador = $colab->toArray();
+		
+		// busca as subTabelas
+		$colaborador['ctpsUfId'] = $this->buscaPorId('uf', $colaborador['ctpsUfId']);
+		$colaborador['sexoId'] = $this->buscaPorId('sexo', $colaborador['sexoId']);
+		$colaborador['estadoCivilId'] = $this->buscaPorId('estado_civil', $colaborador['estadoCivilId']);
+		$colaborador['ufResId'] = $this->buscaPorId('uf', $colaborador['ufResId']);
+		$colaborador['ufEmissorId'] = $this->buscaPorId('uf', $colaborador['ufEmissorId']);
+		$colaborador['cargoId'] = $this->buscaPorId('cargo', $colaborador['cargoId']);
+		$colaborador['hierarquiaId'] = $this->buscaPorId('hierarquia', $colaborador['hierarquiaId']);
+		$colaborador['situacaoId'] = $this->buscaPorId('situacao', $colaborador['situacaoId']);
+		$colaborador['turnoId'] = $this->buscaPorId('turno', $colaborador['turnoId']);
+		$colaborador['tipoContratacaoId'] = $this->buscaPorId('tipo_contratacao', $colaborador['tipoContratacaoId']);
+		$colaborador['empresaId'] = $this->buscaPorId('empresa', $colaborador['empresaId']);
+		$colaborador['sindicatoId'] = $this->buscaPorId('sindicato', $colaborador['sindicatoId']);
+		$colaborador['filialId'] = $this->buscaPorId('filial', $colaborador['filialId']);
+		$colaborador['municipioId'] = $this->buscaPorId('municipio', $colaborador['municipioId']);
+		$colaborador['centroDeCustoId'] = $this->buscaPorId('centro_de_custo', $colaborador['centroDeCustoId']);
+		
+		if(!empty($colaborador['centroDeCustoId'])){
+			$colaborador['centroDeCustoId']['hierarquia'] = $this->buscarHierarquia($colaborador['centroDeCustoId']['id']);
+		}
+		
+		// retorna colaborador
+		return $colaborador;
+	}
+	
+	/**
+	 * Método responsável por buscar as hierarquias de um centro de custo
+	 */
+	private function buscarHierarquia($aCentroDeCustoId){
+		$sql = "
+			SELECT
+				h.*
+			FROM
+				hierarquia h
+			WHERE
+				h.centro_de_custo_id = :ccId
+		";
+		$p = SistemaConexao::getInstance()->prepare($sql);
+		$p->execute([
+				'ccId'=> $aCentroDeCustoId 
+		]);
+		
+		$lista = array();
+		while($row = $p->fetch(\PDO::FETCH_ASSOC)){
+			$r = array();
+			foreach($row as $k => $v){
+				$r[Util::underlineToMaiuscula($k)] = $v;
+			}
+			$lista[] = $r;
+		}
+		return $lista;
+	}
+	
+	/**
+	 * Método responsável por retornar a lista das tabelas de apoio com valores estático
+	 */
+	public function apoioEstatico(){
+		// verifica se o usuário está autenticado
+		$usuario = SistemaUsuario::validarUusuario("colaborador", $this->_request);
+		
+		$uf = $this->buscarTodos("uf");
+		$estadoCivil = $this->buscarTodos("estadoCivil");
+		$sexo = $this->buscarTodos("sexo");
+		$cargo = $this->buscarTodos("cargo");
+		$situacao = $this->buscarTodos("situacao");
+		$turno = $this->buscarTodos("turno");
+		$tipoContratacao = $this->buscarTodos("tipoContratacao");
+		$sindicato = $this->buscarTodos("sindicato");
+		
+		return array(
+				'uf'=> $uf,
+				'estadoCivil'=> $estadoCivil,
+				'sexo'=> $sexo,
+				'cargo'=> $cargo,
+				'situacao'=> $situacao,
+				'turno'=> $turno,
+				'tipoContratacao'=> $tipoContratacao,
+				'sindicato'=> $sindicato 
+		);
+	}
+	
+	/**
+	 * Método responsável por atualizar os dados do colaborador
+	 */
+	public function salvar(){
+		$cId = "";
+		if(empty($this->_request["params"]["colaborador"]["id"])){
+			throw new \Exception("Colaborador é obrigatório",
+					-debug_backtrace()[0]["line"]);
+		}
+	
+		$cId = $this->_request["params"]["colaborador"]["id"];
+		
+		$id = null;
+		$value = "";
+		$coluna = "";
+		$bind = array();
+		
+		
+		
+		$deleta = true;
+		
+		foreach($this->_request["params"]["turno"] as $kTurno => $vTurno){
+			$turno = new ColaboradorTurno();
+			
+			if($deleta){
+				$turnos = $turno->buscarPorColaborador($cId);
+				
+				/** @var \Model\Model\ColaboradorTurno $vTdelete */
+				foreach($turnos as $vTdelete){
+					$vTdelete->deletar();
+				}
+				$deleta = false;
+			}
+			
+			$inicio = \DateTime::createFromFormat("H:i:s", $vTurno["inicio"]);
+			$fim = \DateTime::createFromFormat("H:i:s", $vTurno["fim"]);
+			
+			$turno->setFim($fim->format("H:i:s"));				
+			$turno->setInicio($inicio->format("H:i:s"));				
+			$turno->setColaboradorId($cId);				
+			$turno->setTurno($vTurno['turno']);
+			$turno->salvar();
+		}
+		
+		
+		foreach($this->_request["params"]["colaborador"] as $k => $v){
+			if($k == 'id'){
+				$id = intval($v);
+				continue;
+			}
+			if($k == 'usuarioId'){
+				continue;
+			}
+			if($k == 'cpf'){
+				continue;
+			}
+			if($k == 'matricula'){
+				continue;
+			}
+			
+			if($coluna != ""){
+				$coluna .= ", \n";
+			}
+			
+			$valor = $this->valor($v);
+			
+			if($k == "dataEmissao"){
+				$valor = $this->dataBanco($v);
+			}
+			if($k == "nascimento"){
+				$valor = $this->dataBanco($v);
+			}
+			if($k == "admissao"){
+				$valor = $this->dataBanco($v);
+			}
+			if($k == "dataDemissao"){
+				$valor = $this->dataBanco($v);
+			}
+			$bind[':' . $k] = $valor;
+			$coluna .= Util::maiusculaToUnderline($k) . "=:" . $k;
+		}
+		
+		$sql = "UPDATE colaborador SET " . $coluna . " WHERE id =:id";
+		if(empty($id)){
+			throw new \Exception("ID Inválido", -5);
+		}
+		
+		$ps = SistemaConexao::getInstance()->prepare($sql);
+		$ps->bindValue(':id', $id);
+		
+		foreach($bind as $k => $v){
+			$ps->bindValue($k, $v);
+		}
+		
+		$ps->execute();
+		
+		return true;
+	}
+	
+	/**
+	 * Método responsável por pegar o valor, se for de um array retorna o key id se for objeto pega o getId() se for outros
+	 * retorna o mesmo
+	 * 
+	 * @param unknown $aValor        	
+	 */
+	private function valor($aValor){
+		if(is_array($aValor)){
+			return $aValor['id'];
+		}
+		return $aValor;
+	}
+	
+	/**
+	 * Método responsável por buscar todos os itens de uma tabela
+	 * 
+	 * @param string $aTabela
+	 *        	nome da tabela
+	 * @return array [[nomeUm:valor, nomeDois:valor],..]
+	 */
+	private function buscarTodos($aTabela){
+		$sql = "SELECT * FROM " . Util::maiusculaToUnderline($aTabela);
+		$ps = SistemaConexao::getInstance()->prepare($sql);
+		$ps->execute();
+		$lista = array();
+		while($row = $ps->fetch(\PDO::FETCH_ASSOC)){
+			$item = array();
+			foreach($row as $k => $v){
+				$item[Util::underlineToMaiuscula($k)] = $v;
+			}
+			$lista[] = $item;
+		}
+		return $lista;
+	}
+	
+	/**
+	 * Método responsável por buscar um item do banco com base na tabela e no id
+	 * 
+	 * @param string $aTabela
+	 *        	nome da tabela
+	 * @param int $aId
+	 *        	id do item
+	 * @return item retorna o item na forma de array trocando os _ por letra maíuscula nome_sobrenome por nomeSobrenome
+	 */
+	private function buscaPorId($aTabela, $aId = null){
+		if(((int) $aId) < 1){
+			return null;
+		}
+		
+		$sql = "SELECT * FROM " . Util::maiusculaToUnderline($aTabela) . " WHERE id =:id ";
+		$ps = SistemaConexao::getInstance()->prepare($sql);
+		$ps->bindValue(':id', $aId);
+		$ps->execute();
+		
+		$item = array();
+		while($row = $ps->fetch(\PDO::FETCH_ASSOC)){
+			foreach($row as $k => $v){
+				$item[Util::underlineToMaiuscula($k)] = $v;
+			}
+			break;
+		}
+		return $item;
+	}
+	
+	/**
+	 * Método responsável por formatar a data
+	 * 
+	 * @param string $aData
+	 *        	se data deve estar no formato aaaa-mm-dd ou null ou vazio
+	 * @return string vazia ou aaaammaa
+	 */
+	private function formatData($aData){
+		
+		// se data for vazia então retorna nada
+		if(empty($aData)){
+			return "";
+		}
+		
+		// se data for zerada então retorna nada
+		if(preg_replace("/[0\W]/", '', $aData) == ""){
+			return "";
+		}
+		
+		$data = new \DateTime($aData);
+		
+		return $data->format("dmY");
+	}
+	
+	/**
+	 * Método responsável por converter a data do tio ddmmaaaa para aaaa-mm-dd
+	 * 
+	 * @param string $aData
+	 *        	ddmmaaaa
+	 * @return string aaaa-mm-dd ou null
+	 */
+	private function dataBanco($aData){
+		// se data for zerada então retorna nada
+		if(preg_replace("/[0\W]/", '', $aData) == ""){
+			return null;
+		}
+		
+		// se data for vazia então retorna nada
+		if(empty($aData)){
+			return null;
+		}
+		
+		$data = preg_replace("/(\d{2})(\d{2})(\d{4})/", "$3-$2-$1", $aData);
+		return $data;
+	}
+}

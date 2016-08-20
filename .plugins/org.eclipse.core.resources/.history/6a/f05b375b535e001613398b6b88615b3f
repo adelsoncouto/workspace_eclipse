@@ -1,0 +1,62 @@
+﻿app.controller("habilidadeOpcaoController", [ "$filter", "$scope", "$cookies",
+	"api", function($filter, $scope, $cookies, api) {
+	    $scope.usuario = $cookies.getObject('usuario');
+
+	    $scope.habilidade = new habilidadeOpcaoController_habilidade(api);
+
+	    // gerencia a tela a ser exibida
+	    $scope.tela = new Tela($scope);
+	    $scope.tela.ativar('tabela');
+
+	} ]);
+
+function habilidadeOpcaoController_habilidade(aApi, aId, aHabilidade) {
+    var _this = this;
+    this.lista = [];
+    this.id = "";
+    this.habilidade = "";
+    this.lista = [];
+
+    this.salvar = function() {
+	aApi.enviarApi("Habilidade.cadastrarOpcao", 1, _this.toJson()).success(
+		function(aResp) {
+		    if (aResp.error) {
+			alertaAtencao(aResp.error.message);
+			return;
+		    }
+		    _this.habilidade = "";
+		    alertaSuccess("Salvo com sucesso!");
+		    _this.listar();
+		}).error(function(aResp) {
+	    alertaAtencao(aResp);
+	})
+    }
+
+    this.listar = function() {
+	aApi.enviarApi("Habilidade.listarOpcao", 1, "").success(
+		function(aResp) {
+		    if (aResp.error) {
+			alertaAtencao(aResp.error.message);
+			return;
+		    }
+		    _this.lista = aResp.result;
+		}).error(function(aResp) {
+	    alertaAtencao(aResp);
+	})
+    }
+
+    this.toJson = function() {
+	var _obj = {};
+	_obj.id = _this.id;
+	_obj.habilidade = _this.habilidade;
+	return _obj;
+    };
+
+    (function() {
+	_this.id = (aId === undefined) ? _this.id : aId;
+	_this.habilidade = (aHabilidade === undefined) ? _this.habilidade
+		: aHabilidade;
+	// _this.listar();
+    })();
+
+}

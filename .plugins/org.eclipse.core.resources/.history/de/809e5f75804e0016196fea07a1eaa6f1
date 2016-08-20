@@ -1,0 +1,95 @@
+<?php
+require_once 'vendor/autoload.php';
+use Model\Banco\SistemaConexao;
+date_default_timezone_set("America/Sao_Paulo");
+// ini_set("display_errors",1);
+// ini_set("display_startup_erros",1);
+// error_reporting(E_ALL);
+
+function exception_error_handler($errno, $errstr, $errfile, $errline ) {
+	throw new Exception($errstr, 0);
+}
+set_error_handler("exception_error_handler", E_ALL);
+// register_shutdown_function("exception_error_handler");
+
+//define o tipo de retorno deve ser json
+header('Content-Type: application/json');
+
+try{
+	//pega o request
+	$request = json_decode(file_get_contents("php://input"), true);
+	if(!$request){
+		$request = $_REQUEST;
+	}
+	
+	//pega a classe.metodo e remove caracteres especiais
+	$method = preg_replace('/[^0-9a-zA-Z\.]/','',$request["method"]);
+	
+	//pega os params
+	$params = $request["params"];
+	
+	//pega a auth
+	$auth = $request["auth"];
+	
+	//pega o id da requisição
+	$id = $request["id"];
+	
+	//separa a classe do método
+	$classe_metodo = explode(".", $method);
+	
+	//define o pacote da classe, requisição do cliente deve obrigatóriamente direcionar para o pacote client
+	$classe = "Model\\Client\\".$classe_metodo[0];
+	
+	//cria uma instancia da classe passando os parametros e definidio o lazy como falso
+	$objeto = new $classe($request, false);
+	
+	//gravar log
+	$_su = "select id from sistema_usuario where chave =:chave";
+	$_psu = SistemaConexao::getInstance()->prepare($_su);
+	$_psu->execute([":chave"=>$auth]);
+	$_sui = $_psu->fetch(PDO::FETCH_ASSOC)["id"];
+	$_dt = date("Y-m-d H:i:s");
+	$requisicao = json_encode($request);
+	$_sl = "insert into sistema_log(usuario_id,parametros,classe,data_hora,acao)
+           values ('" . $_sui . "','" . $requisicao . "','"
+	           		. $classe_metodo[0] . "','" . $_dt . "','LOG_DE_REQUISICAO')";
+	
+	           		$_psu = SistemaConexao::getInstance()->prepare($_sl);
+	           		$_psu->execute();
+	
+	           		//fim gravar log
+	
+	//pega o resultado do método solicitado
+	$metodo = $classe_metodo[1];
+	$result = $objeto->$metodo();
+	
+	//monta o json para devolução
+	$json = array(
+			"jsonrpc"=>"2.0",
+			"id"=>$request["id"]
+	);
+	
+	//adiciona o resutado no json
+	$json["result"] = $result;
+	
+	//publica o resultado em json
+	echo json_encode($json, true);
+	
+	
+}catch(\Exception $e){
+	
+	//cria array de retorno com erro
+	$json = array(
+			"jsonrpc"=>"2.0",
+			"id"=>$request["id"]
+	);
+	
+	//define o erro
+	$json["error"] = array(
+			"message"=>$e->getMessage(),//.' ['.$e->getFile().':'.$e->getLine().']',
+			"code"=>$e->getCode()
+	);
+	
+	//publica o resultado em json
+	echo json_encode($json, true);
+}

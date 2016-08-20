@@ -1,0 +1,10 @@
+dialog.ParallelGateway.x=104
+dialog.ParallelGateway.y=104
+dialog.ScriptTask.x=104
+dialog.ScriptTask.y=104
+dialog.SequenceFlow.tab=1
+dialog.SequenceFlow.x=130
+dialog.SequenceFlow.y=130
+do.core.validation=true
+eclipse.preferences.version=1
+section.ScriptTask.Appearance..expanded=true

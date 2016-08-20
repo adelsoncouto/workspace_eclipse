@@ -1,0 +1,12 @@
+﻿<div
+	class="telas telas-gestao telas-gestao-cadastro telas-gestao-cadastro-colaboradorr">
+	<div data-ng-show="tela.ativa == 'tabela'">
+		<div data-ng-include="'view/gestao/cadastro/colaborador/tabela.html'"></div>
+	</div>
+	<div data-ng-show="tela.ativa == 'detalhe'">
+		<div data-ng-include="'view/gestao/cadastro/colaborador/detalhe.html'"></div>
+	</div>
+	<div data-ng-show="tela.ativa == 'edita'">
+		<div data-ng-include="'view/gestao/cadastro/colaborador/edita.html'"></div>
+	</div>
+</div>

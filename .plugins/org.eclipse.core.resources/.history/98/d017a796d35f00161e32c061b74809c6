@@ -1,0 +1,43 @@
+<?php
+namespace Model\Client;
+
+use Model\Client\Client;
+
+class Servico extends Client{
+	
+	public function __construct($aRequest, $aLazy = true) {
+		parent::__construct($aRequest, $aLazy);
+	}
+	
+	private function post($aJsonRequest, $aUrl){
+		$ch = curl_init();
+		curl_setopt($ch, CURLOPT_URL,            $aUrl);
+		curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1 );
+		curl_setopt($ch, CURLOPT_POST,           1 );
+		curl_setopt($ch, CURLOPT_POSTFIELDS,     $aJsonRequest );
+		curl_setopt($ch, CURLOPT_HTTPHEADER,     
+			array(
+				'Pragma: no-cache' 
+				,'Accept-Encoding: gzip, deflate, br' 
+				,'Accept-Language: pt-BR,pt;q=0.8,en-US;q=0.6,en;q=0.4' 
+				,'User-Agent: Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/52.0.2743.116 Safari/537.36' 
+				,'Content-Type: application/json;charset=UTF-8' 
+				,'Accept: application/json, text/plain, */*' 
+				,'Cache-Control: no-cache' 
+				,'Connection: keep-alive' 
+			)
+		);
+		
+		$result=curl_exec ($ch);
+		return $result;
+		 
+	}
+		
+	public function teste(){
+		$r =  $this->post('{"jsonrpc":"2.0","method":"Teste.a","id":"1","auth":"e5b46ce40b5c504495fbf83ac7b0c33e-1","params":""}', 
+				'http://gwm.adscouto.dev.br/api.php?');
+		$js = json_decode($r,true);
+		return $js["result"]
+	}
+	
+}

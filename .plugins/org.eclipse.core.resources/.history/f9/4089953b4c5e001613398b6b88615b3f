@@ -1,0 +1,21 @@
+﻿app.controller("habilidadeColaboradorController", [ "$filter", "$scope",
+	"$cookies", "api", function($filter, $scope, $cookies, api) {
+	    $scope.usuario = $cookies.getObject('usuario');
+
+	    // gerencia a tela a ser exibida
+	    $scope.tela = new Tela($scope);
+	    $scope.tela.ativar('tabela');
+
+	} ]);
+
+
+function habilidade_ModelHabilidade(aId, aHabilidade){
+	var _this = this;
+	this.id = "";
+	this.habilidade = "";
+
+	(function(){
+		_this.id = (aId === undefined)?_this.id:aId;
+		_this.habilidade = (aHabilidade === undefined)?_this.habilidade:aHabilidade;
+	})()
+}

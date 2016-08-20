@@ -1,0 +1,464 @@
+<?php
+namespace Model\Timesheet\Aprovar;
+
+date_default_timezone_set("America/Sao_Paulo");
+if(strcmp(basename($_SERVER['SCRIPT_NAME']), basename(__FILE__)) === 0){ exit("Acesso negado");}
+ini_set('memory_limit', '512M');
+ini_set('max_execution_time', 300);
+// ini_set("display_errors",1);
+// ini_set("display_startup_erros",1);
+// error_reporting(E_ALL);
+
+use Model\Timesheet\Aprovar\SomaDeHora;
+use Model\Timesheet\Aprovar\Gestor;
+use Model\Banco\SistemaConexao;
+
+class ListaDeTimesheetParaAprovar {
+	
+	private $dados; //mesmo retorna do em CarregarDados->dados();
+	private $usuarioLogado; //mesmo retornado pelo SistemaUsuario->verificarAcesso();
+	private $_request;
+	private $somaHora;
+	private $gestor;
+
+
+	public function __construct($aDados, $aUsuarioLogado, $aRequest){
+		$this->_request = $aRequest;
+		return;
+		$this->dados = $aDados;
+		$this->usuarioLogado = $aUsuarioLogado;
+		$this->somaHora = new SomaDeHora();
+		$this->gestor = new Gestor();
+	}
+
+	public function __destruct(){
+	}
+
+	public function resumo(){
+		/*dados = [
+          	'listMeusCentroDeCusto',
+			'listMinhasHierarquia',
+			'listMeusColaborador',
+			'listHorasDosMeusColaborador',
+			'listSindicato',
+			'listHorasDosOutrosColaborador',
+			'listCcDosOutrosColaborador',
+			'listHierarquiaDosOutrosColaborador',
+			'listCcMeuDosOutrosColaborador',
+			'listOutrosColaborador',
+			'listTotalHoraMeusColaboradores',
+			'listTotalHoraOutrosColaboradores',
+	  	]*/
+	  			
+		//pega o id do colaborador logado
+		$id = $this->usuarioLogado["colaborador"]["id"];
+
+		//pega o tipo de filtro
+		$filtro = $this->_request['params']['filtro'];
+
+		//pega o centro de custo
+		$ccId = isset($this->_request['params']['centroDeCustoId'])?$this->_request['params']['centroDeCustoId']:'';
+
+
+		//lista de dados de retorno 
+		$result = array();
+
+		$resumo = [
+			'hn'=>0,
+			'he'=>0,
+			'fe'=>0,
+			'so'=>0,
+			'an'=>0,
+			'bh'=>0,
+			'ub'=>0
+		];
+
+		
+		//se existir o ccId, significa que é um cc específico
+
+		if($ccId != ''){
+			$listaTemTimesheet = [];
+			foreach ($this->dados['listHorasDosMeusColaborador'] as $key => $value) {
+				$listaTemTimesheet[$value['colaborador_id']] = $value['status'];
+			}
+			foreach($this->dados['listMeusColaborador'] as $k => $v){
+				if($v['cSituacaoId'] == 1){
+					continue;
+				}
+				//remove os demitidos
+				if($v['cSindicatoId'] == 1){
+					continue;
+				}
+				
+				$isConta = false;
+				if(isset($this->dados['listTotalHoraMeusColaboradores'][$v['cId']])){
+					$lista = $this->dados['listTotalHoraMeusColaboradores'][$v['cId']];
+					foreach ($lista as $vv){
+						if($vv['projeto_id'] == $ccId){
+							$isConta = true;
+						}
+					}
+				}
+				
+				if($v['cCentroDeCustoId'] == $ccId || $isConta){
+
+					$sindicato = $this->dados['listSindicato'][7];
+					if(isset($this->dados['listSindicato'][$v['cSindicatoId']])){
+						$sindicato = $this->dados['listSindicato'][$v['cSindicatoId']];
+					}
+
+					$horas = $this->somaHora->somarHoras($v['cId'], null, $sindicato, $ccId);
+					if(isset($this->dados['listTotalHoraMeusColaboradores'][$v['cId']])){
+						$horas = $this->somaHora->somarHoras($v['cId'], $this->dados['listTotalHoraMeusColaboradores'][$v['cId']], $sindicato, $ccId);
+					}
+					
+
+					$hNome = 'Sem hierarquia';
+					if(isset($this->dados['listMinhasHierarquia'][$v['cHierarquiaId']])){
+						$hNome = $this->dados['listMinhasHierarquia'][$v['cHierarquiaId']]['hNome'];
+						if(trim($hNome) == ''){
+							$hNome = 'Sem hierarquia';
+						}
+					}
+
+					$totalHora = $horas['normal']+$horas['extra']+$horas['ferias']+$horas['sobreaviso']
+						+$horas['noturno']+$horas['banco']+$horas['usoBanco'];
+					
+					$status = 'Pendente';
+					if(isset($listaTemTimesheet[$v['cId']])){
+						$status = $horas['status'];//$listaTemTimesheet[$v['cId']];
+						if($totalHora <= 0){
+							$status = 'Sem lançamento para este C.C.';
+						}
+					}
+					
+					$centroDeCusto = $this->dados['listMeusCentroDeCusto'][$ccId];
+					
+					$hierarquia = isset($this->dados['listMinhasHierarquia'][$v['cHierarquiaId']])
+									?$this->dados['listMinhasHierarquia'][$v['cHierarquiaId']]
+									:['hNome'=>'Sem hierarquia', 'hCodigo'=>'_0'];
+
+					if($this->ehMeuSuperior($hierarquia, $centroDeCusto, $v)){
+						continue;
+					}
+
+					$result[] = [
+						'sel'=>false,
+						'cId'=>$v['cId'],
+						'ccReferencia'=>$ccId,
+						'cNome'=>$v['cNome'],
+						'cCpf'=>$v['cCpf'],
+						'ccNome'=>$centroDeCusto['ccNome'],
+						'ccCodigo'=>$centroDeCusto['ccCodigo'],
+						'hNome'=>$hierarquia['hNome'],
+						'hCodigo'=>$hierarquia['hCodigo'],
+						'cCentroDeCustoId'=>$v['cCentroDeCustoId'],
+						'hNome'=>$hNome,
+						'cNome'=> $v['cNome'],
+						'status'=> $horas['status'],//$status,
+						'hn'=>($horas['normal']),
+						'he'=>($horas['extra']),
+						'fe'=>($horas['ferias']),
+						'so'=>($horas['sobreaviso']),
+						'an'=>($horas['noturno']),
+						'bh'=>($horas['banco']),
+						'ub'=>($horas['usoBanco'])
+					];
+				}
+			}
+
+			
+			foreach($this->dados['listOutrosColaborador'] as $k => $v){
+				if($v['cSituacaoId'] == 1){
+					continue;
+				}
+				//remove os demitidos
+				if($v['cSindicatoId'] == 1){
+					continue;
+				}
+			
+				$isConta = false;
+				$lista = $this->dados['listHorasDosOutrosColaborador'];
+				foreach ($lista as $vv){
+					if($vv['projeto_id'] == $ccId){
+						$isConta = true;
+					}
+				}
+				
+				if($isConta){
+				
+					$sindicato = $this->dados['listSindicato'][7];
+					if(isset($this->dados['listSindicato'][$v['cSindicatoId']])){
+						$sindicato = $this->dados['listSindicato'][$v['cSindicatoId']];
+					}
+				
+					$horas = $this->somaHora->somarHoras($v['cId'], $this->dados['listHorasDosOutrosColaborador'], $sindicato, $ccId);
+					
+					$totalHora = $horas['normal']+$horas['extra']+$horas['ferias']+$horas['sobreaviso']
+					+$horas['noturno']+$horas['banco']+$horas['usoBanco'];
+					
+					if($totalHora <= 0){
+						continue;
+					}
+					
+					$hNome = 'Outro projeto';
+					$status = $horas['status'];
+					$centroDeCusto = $this->dados['listMeusCentroDeCusto'][$ccId];
+						
+					$hierarquia = isset($this->dados['listMinhasHierarquia'][$v['cHierarquiaId']])
+					?$this->dados['listMinhasHierarquia'][$v['cHierarquiaId']]
+					:['hNome'=>'Sem hierarquia', 'hCodigo'=>'_0'];
+				
+					if($this->ehMeuSuperior($hierarquia, $centroDeCusto, $v)){
+						continue;
+					}
+				
+					$result[] = [
+							'sel'=>false,
+							'cId'=>$v['cId'],
+							'ccReferencia'=>$ccId,
+							'cNome'=>$v['cNome'],
+							'cCpf'=>$v['cCpf'],
+							'ccNome'=>$centroDeCusto['ccNome'],
+							'ccCodigo'=>$centroDeCusto['ccCodigo'],
+							'hNome'=>$hierarquia['hNome'],
+							'hCodigo'=>$hierarquia['hCodigo'],
+							'cCentroDeCustoId'=>$v['cCentroDeCustoId'],
+							'hNome'=>$hNome,
+							'cNome'=> $v['cNome'],
+							'status'=> $horas['status'],//$status,
+							'hn'=>($horas['normal']),
+							'he'=>($horas['extra']),
+							'fe'=>($horas['ferias']),
+							'so'=>($horas['sobreaviso']),
+							'an'=>($horas['noturno']),
+							'bh'=>($horas['banco']),
+							'ub'=>($horas['usoBanco'])
+					];
+				}
+			}
+			
+			$sqlGestores = "
+					SELECT
+						cc.gerente_id,
+						cc.diretor_id,
+						cc.gerente_operacao_id,
+						h.coordenador_id,
+						h.supervisor_id,
+						h.lider_id
+					FROM
+						centro_de_custo cc
+						join hierarquia h on h.centro_de_custo_id = cc.id
+					WHERE
+						cc.id = :id;
+					";
+			$psGestor = SistemaConexao::getInstance()->prepare($sqlGestores);
+			$psGestor->bindValue(':id',$this->_request['params']['centroDeCustoId']);
+			$psGestor->execute();
+			$g = array();
+			$d = array();
+			$gop =array();
+			$co = array();
+			$su = array();
+			$li = array();
+			while($row = $psGestor->fetch(\PDO::FETCH_ASSOC)){
+				$g[$row['gerente_id']] = $row['gerente_id'];
+				$d[$row['diretor_id']] = $row['diretor_id'];
+				$gop[$row['gerente_operacao_id']] = $row['gerente_operacao_id'];
+				$co[$row['coordenador_id']] = $row['coordenador_id'];
+				$su[$row['supervisor_id']] = $row['supervisor_id'];
+				$li[$row['lider_id']] = $row['lider_id'];
+			}
+			
+			$u = $this->usuarioLogado['colaborador']['id'];
+			$us = 0;
+			foreach ($su as $k=>$v){
+				if($u == $v){
+					$us = 5;
+				}
+			}
+			foreach ($li as $k=>$v){
+				if($u == $v){
+					$us = 4;
+				}
+			}
+			foreach ($co as $k=>$v){
+				if($u == $v){
+					$us = 3;
+				}
+			}
+			foreach ($g as $k=>$v){
+				if($u == $v){
+					$us = 2;
+				}
+			}
+			foreach ($gop as $k=>$v){
+				if($u == $v){
+					$us = 1;
+				}
+			}
+			foreach ($d as $k=>$v){
+				if($u == $v){
+					$us = 0;
+				}
+			}
+			
+			$r0 = array_merge($d);
+			$r1 = array_merge($d, $gop);
+			$r2 = array_merge($g, $d, $gop);
+			$r3 = array_merge($g, $d, $gop, $co);
+			$r4 = array_merge($g, $d, $gop, $co, $li);
+			$r5 = array_merge($g, $d, $gop, $su, $co, $li);
+			foreach ($result as $ka=>$va){
+				if($us == 0){
+					foreach ($r0 as $k=>$v){
+						if($v != $u && $v == $va['cId']){
+							unset($result[$ka]);
+						}
+					}
+				}
+				if($us == 1){
+					foreach ($r1 as $k=>$v){
+						if($v != $u && $v == $va['cId']){
+							unset($result[$ka]);
+						}
+					}
+				}
+			
+				if($us == 2){
+					foreach ($r2 as $k=>$v){
+						if($v != $u && $v == $va['cId']){
+							unset($result[$ka]);
+						}
+					}
+				}
+				if($us == 3){
+					foreach ($r3 as $k=>$v){
+						if($v != $u && $v == $va['cId']){
+							unset($result[$ka]);
+						}
+					}
+				}
+				if($us == 4){
+					foreach ($r4 as $k=>$v){
+						if($v != $u && $v == $va['cId']){
+							unset($result[$ka]);
+						}
+					}
+				}
+				if($us == 5){
+					foreach ($r5 as $k=>$v){
+						if($v != $u && $v == $va['cId']){
+							unset($result[$ka]);
+						}
+					}
+				}
+			}
+			return $result;
+
+		}
+/* MUDANÇA NA REGRA DE NEGÓCIO
+		$listaTemTimesheet = [];
+		foreach ($this->dados['listHorasDosOutrosColaborador'] as $key => $value) {
+			$listaTemTimesheet[$value['colaborador_id']] = ['status'=>$value['status'], 'cc'=>$value['projeto_id']];
+		}
+
+		$result = array();
+
+		foreach($this->dados['listOutrosColaborador'] as $k => $v){
+			$sindicato = $this->dados['listSindicato'][7];
+			if(isset($this->dados['listSindicato'][$v['cSindicatoId']])){
+				$sindicato = $this->dados['listSindicato'][$v['cSindicatoId']];
+			}
+
+			$horas = $this->somaHora->somarHoras($v['cId'], $this->dados['listHorasDosOutrosColaborador'], $sindicato);
+			
+
+			$hNome = 'Todas';
+			
+			$status = 'Pendente';
+			$ccId = '0';
+			if(isset($listaTemTimesheet[$v['cId']])){
+				$status = $listaTemTimesheet[$v['cId']]['status'];
+				$ccId = $listaTemTimesheet[$v['cId']]['cc'];
+			}
+
+			$centroDeCusto = $this->dados['listCcDosOutrosColaborador'][$v['cCentroDeCustoId']];
+			if($v['cSituacaoId'] == 1){
+				continue;
+			}
+			$result[] = [
+				'sel'=>false,
+				'cId'=>$v['cId'],
+				'cNome'=>$v['cNome'],
+				'cCpf'=>$v['cCpf'],
+				'ccNome'=>$centroDeCusto['ccNome'],
+				'ccCodigo'=>$centroDeCusto['ccCodigo'],
+				'hNome'=>$hNome,
+				'hCodigo'=>'-',
+				'cCentroDeCustoId'=>$v['cCentroDeCustoId'],
+				'cMeuCentroDeCusto'=>$v['cMeuCentroDeCusto'],
+				'hNome'=>$hNome,
+				'cNome'=> $v['cNome'],
+				'status'=> $status,
+				'hn'=>($horas['normal']),
+				'he'=>($horas['extra']),
+				'fe'=>($horas['ferias']),
+				'so'=>($horas['sobreaviso']),
+				'an'=>($horas['noturno']),
+				'bh'=>($horas['banco']),
+				'ub'=>($horas['usoBanco'])
+			];
+		}
+
+		return $result;*/
+	}
+
+	private function ehMeuSuperior($aHierarquia, $aCentroDeCusto, $aColaborador){
+		$funcao = $this->gestor->funcao($aCentroDeCusto, $this->usuarioLogado['colaborador']['id']);	
+		if($funcao == 'Diretor'){
+			return false;
+		}		
+
+		if($funcao == 'Gerente de operação' && $aCentroDeCusto['ccDiretorId'] == $aColaborador['cId']){
+			return true;
+		}
+
+		if($funcao == 'Gerente' 
+				&& $aCentroDeCusto['ccDiretorId'] == $aColaborador['cId']
+				&& $aCentroDeCusto['ccGerenteOperacaoId'] == $aColaborador['cId']
+		){
+			return true;
+		}
+
+		if($funcao == 'Coordenador de hierarquia' 
+				&& $aCentroDeCusto['ccDiretorId'] == $aColaborador['cId']
+				&& $aCentroDeCusto['ccGerenteOperacaoId'] == $aColaborador['cId']
+				&& $aCentroDeCusto['ccGerenteId'] == $aColaborador['cId']
+		){
+			return true;
+		}
+
+		if($funcao == 'Líder de hierarquia' 
+				&& $aCentroDeCusto['ccDiretorId'] == $aColaborador['cId']
+				&& $aCentroDeCusto['ccGerenteOperacaoId'] == $aColaborador['cId']
+				&& $aCentroDeCusto['ccGerenteId'] == $aColaborador['cId']
+				&& $aHierarquia['hCoordenadorId'] == $aColaborador['cId']
+		){
+			return true;
+		}
+
+		if($funcao == 'Supervisor de hierarquia' 
+				&& $aCentroDeCusto['ccDiretorId'] == $aColaborador['cId']
+				&& $aCentroDeCusto['ccGerenteOperacaoId'] == $aColaborador['cId']
+				&& $aCentroDeCusto['ccGerenteId'] == $aColaborador['cId']
+				&& $aHierarquia['hCoordenadorId'] == $aColaborador['cId']
+				&& $aHierarquia['hLiderId'] == $aColaborador['cId']
+		){
+			return true;
+		}
+
+		return false;
+	}
+
+} 

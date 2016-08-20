@@ -1,0 +1,12 @@
+﻿app.controller("habilidadeColaboradorController", [ "$filter", "$scope",
+	"$cookies", "api", function($filter, $scope, $cookies, api) {
+	    $scope.usuario = $cookies.getObject('usuario');
+
+	    
+	    // gerencia a tela a ser exibida
+	    $scope.tela = new Tela($scope);
+	    $scope.tela.ativar('tabela');
+
+	} ]);
+
+

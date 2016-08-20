@@ -1,0 +1,11 @@
+<?php
+namespace Model\Timesheet\Historico;
+
+
+class DividiHora{
+	
+	public function __construct(){
+		
+	}
+	
+}

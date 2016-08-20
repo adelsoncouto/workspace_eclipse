@@ -1,0 +1,195 @@
+<?php
+namespace Model\Dashboard;
+
+use Model\Banco\SistemaConexao;
+use Model\Propay\ImportaDados;
+
+if(strcmp(basename($_SERVER['SCRIPT_NAME']), basename(__FILE__)) === 0){ exit("Acesso negado");}
+ini_set('memory_limit', '512M');
+ini_set('max_execution_time', 1200);
+
+
+/**
+ * Classe responsável por atualizar o histórico de salário dos colaboradores
+ * @author Adelson Silva Couto
+ *
+ */
+class Salario {
+
+	/**
+	 * Método construtor
+	 */
+	public function __construct(){
+		
+	}
+	
+	/**
+	 * Método destrutor
+	 */
+	public function __destruct(){
+		
+	}
+	
+	/**
+	 * Método responsável por atualizar os salários dos colaboradores
+	 */
+	public function atualizar(){
+		//TODO
+		
+		//cria a tabela no banco se ela não existir
+		$this->criarTabela();
+		
+		//carrega dados da propay
+		$importaDados = new ImportaDados();
+		$lista = $importaDados->getLista();
+		
+		//pega o salário o cargo e o turno, não vinculado às tabelas exisitente
+		$salario = array();
+		
+		foreach ($lista as $v){
+			
+			//limpa o cpf
+			$cpf = preg_replace("/[^0-9]/", "", $v['CPF']);
+			
+			//ignora se não tiver cpf
+			if(empty($cpf)){
+				continue;
+			}
+			
+			//pega o salario, turno e cargo
+			$salario[$cpf] = [
+					'salario'=>empty($v['SALARIOCLT'])?0.0:number_format($v['SALARIOCLT'],2,'.',''),
+					'turno'=>$v['TURNO'],
+					'cargo'=>$v['CARGO']
+				];
+		}
+		
+		//pega a tabela de turnos
+		$ps0 = SistemaConexao::getInstance()->prepare("SELECT * FROM turno");
+		$ps0->execute();
+		$turno = array();
+		while($row = $ps0->fetch(\PDO::FETCH_ASSOC)){
+			$turno[$row['nome']] = $row;
+		}
+		
+		//atualiza a tabela de salário
+		$sqlColaborador = "SELECT * FROM colaborador WHERE cpf =:cpf LIMIT 1";
+		$sqlSalario = "SELECT * FROM colaborador_salario WHERE colaborador_id =:id 
+				ORDER BY inicio_vigencia desc, fim_vigencia desc LIMIT 1";
+		$sqlInsert = "
+				INSERT INTO colaborador_salario
+					(colaborador_id,salario,valor_hora,horas_mes,cargo,inicio_vigencia,fim_vigencia) 
+				VALUES 
+					(:colaborador, :salario, :valor_hora, :horas_mes, :cargo, :inicio_vigencia, :fim_vigencia)";
+		$sqlUpdate = "UPDATE colaborador_salario SET fim_vigencia =:fim WHERE id =:id";
+		
+		foreach ($salario as $kCpf=>$v){
+		
+			//pega o colaborador
+			$ps = SistemaConexao::getInstance()->prepare($sqlColaborador);
+			$ps->execute([':cpf'=>$kCpf]);
+			$colaborador = $ps->fetch(\PDO::FETCH_ASSOC);
+			
+			//para se não encontrar o colaborador
+			if(!$colaborador){
+				continue;
+			}
+			
+			//para se o colaborador não tiver turno cadastrado, necessário para calcular o valor da hora
+			if(empty($colaborador['turno_id'])){
+				continue;
+				$email = new Email();
+			}
+			
+			
+			//para se o colaborador foi demitido
+			if($colaborador['situacao_id'] == 1){
+				continue;
+			}
+			
+			//pega o último salário já cadastrado
+			$ps1 = SistemaConexao::getInstance()->prepare($sqlSalario);
+			$ps1->execute([':id'=>$colaborador['id']]);
+			$sal = $ps1->fetch(\PDO::FETCH_ASSOC);
+			
+			//se não tiver salário então cadatra
+			if(!$sal){
+				$ps2 = SistemaConexao::getInstance()->prepare($sqlInsert);
+				$ps2->execute([
+					':colaborador'=>$colaborador['id'], 
+					':salario'=>$v['salario'], 
+					':valor_hora'=>($v['salario']/$turno[$v['turno']]['horas_mes']), 
+					':horas_mes'=>$turno[$v['turno']]['horas_mes'], 
+					':cargo'=>$v['cargo'], 
+					':inicio_vigencia'=>date('Y-m')."-1",//deve ser sempre do dia primeiro do mes corrente 
+					':fim_vigencia'=>'2099-12-31'//o vigente deve ser a última data possível
+				]);
+				continue;
+			}
+			
+			//se tiver salário já cadastrado compara os valores
+			$iguais = true;
+			
+			if($sal['salario'] != $v['salario']){
+				$iguais = false;
+			}
+			
+			if($sal['horas_mes'] != $turno[$v['turno']]['horas_mes']){
+				$iguais = false;
+			}
+			
+			if($sal['cargo'] != $v['cargo']){
+				$iguais = false;
+			}
+			
+			//se for diferente então inclui o novo e atualiza a data de fim do antigo
+			if(!$iguais){
+				
+				//atualiza o fim da vigência
+				$ps3 = SistemaConexao::getInstance()->prepare($sqlUpdate);
+				$ps3->execute([
+					':id'=>$sal['id'],
+					':fim'=>date("Y-m-d", mktime(-1,0,0,date('m'),'01',date('Y')))
+				]);
+				
+				//insere novo salário
+				$ps2 = SistemaConexao::getInstance()->prepare($sqlInsert);
+				$ps2->execute([
+					':colaborador'=>$colaborador['id'],
+					':salario'=>$v['salario'],
+					':valor_hora'=>($v['salario']/$turno[$v['turno']]['horas_mes']),
+					':horas_mes'=>$turno[$v['turno']]['horas_mes'],
+					':cargo'=>$v['cargo'],
+					':inicio_vigencia'=>date('Y-m')."-1",//deve ser sempre do dia primeiro do mes corrente
+					':fim_vigencia'=>'2099-12-31'//o vigente deve ser a última data possível
+				]);
+			}
+			
+		}
+		
+		return true;
+	}
+	
+	/**
+	 * Método responsável por criar a tabela no banco se ela não existir
+	 */
+	private function criarTabela(){
+		$sql = "
+				CREATE TABLE IF NOT EXISTS `colaborador_salario`(
+					`id` int(10) auto_increment,
+					`colaborador_id` int(10),
+					`salario` float(10,2),
+					`valor_hora` float(10,2),
+					`horas_mes` float(10,2),
+					`cargo` varchar(255),
+					`inicio_vigencia` date,
+					`fim_vigencia` date,
+					PRIMARY KEY(`id`)
+				)ENGINE=InnoDB DEFAULT CHARSET=utf8;
+				";
+		$ps = SistemaConexao::getInstance()->prepare($sql);
+		$ps->execute();
+		return true;
+	}
+	
+}

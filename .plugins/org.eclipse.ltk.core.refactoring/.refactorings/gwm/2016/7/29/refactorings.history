@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<session version="1.0">
+<refactoring comment="Rename resource &apos;gwm/view/gestao/cadastro/feriado/edita.html&apos; to &apos;novo.html&apos;" description="Rename resource &apos;edita.html&apos;" flags="7" id="org.eclipse.ltk.core.refactoring.rename.resource" input="view/gestao/cadastro/feriado/edita.html" name="novo.html" stamp="1468431677970" updateReferences="true"/>
+</session>

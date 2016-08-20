@@ -1,0 +1,12 @@
+<?php
+namespace Model\Timesheet\Historico;
+
+
+class DividiHora{
+	
+	/** @var \Model\Model\Horas $aListHora */
+	public function __construct($aListHora){
+		
+	}
+	
+}

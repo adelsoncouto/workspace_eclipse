@@ -1,0 +1,249 @@
+﻿<div class="new new-colaborador">
+	<div class="panel panel-default">
+		<div class="panel-heading">
+			
+			<h3 class="panel-title">Colaborador</h3>
+		</div>
+		<div class="panel-body">
+			<ul class="nav nav-tabs">
+				<li role="presentation" class="{{tabela.aba == 0?'active':''}}" data-ng-click="tabela.aba = 0"><a href="">Pessoal</a></li>
+				<li role="presentation" class="{{tabela.aba == 1?'active':''}}" data-ng-click="tabela.aba = 1"><a href="">Empresarial</a></li>
+			</ul>
+			<div class="row" data-ng-show="tabela.aba == 0">
+				<div class="col-sm-12 view-col-colaborador">
+					<label><b>Nome: </b></label>
+					<input type="text" class="form-control" data-ng-model="tabela.colaborador.nome"  >
+				</div>
+				<div class="col-sm-4 view-col-colaborador">
+					<label><b>RG: </b></label>
+					<input type="text" class="form-control" data-ng-model="tabela.colaborador.rg"  >
+				</div>
+				<div class="col-sm-4 view-col-colaborador">
+					<label><b>Emissor: </b></label>
+					<input type="text" class="form-control" data-ng-model="tabela.colaborador.emissor"  >
+				</div>
+				<div class="col-sm-4 view-col-colaborador">
+					<label><b>UF (emissor): </b></label> 
+					<select data-ng-model="tabela.colaborador.ufEmissorId"  class="form-control" 
+						data-ng-options="v.nome for v in tabela.apoio.uf">
+						<option value=""></option>
+					</select>
+				</div>
+				<div class="col-sm-4 view-col-colaborador">
+					<label><b>Data de emissão: </b></label>
+					<input type="text" class="form-control" ui-mask="99/99/9999" data-ng-model="tabela.colaborador.dataEmissao"  >
+				</div>
+				<div class="col-sm-4 view-col-colaborador">
+					<label><b>Qtd de Filhos: </b></label>
+					<input type="text" class="form-control" data-ng-model="tabela.colaborador.quantidadeFilho"  >
+				</div>
+				<div class="col-sm-4 view-col-colaborador">
+					<label><b>Estado civil: </b></label>
+					<select data-ng-model="tabela.colaborador.estadoCivilId" class="form-control" 
+						data-ng-options="v.nome for v in tabela.apoio.estadoCivil">
+						<option value=""></option>
+					</select>
+				</div>
+				<div class="col-sm-6 view-col-colaborador">
+					<label><b>Pai: </b></label>
+					<input type="text" class="form-control" data-ng-model="tabela.colaborador.pai"  >
+				</div>
+				<div class="col-sm-6 view-col-colaborador">
+					<label><b>Mãe: </b></label>
+					<input type="text" class="form-control" data-ng-model="tabela.colaborador.mae"  >
+				</div>
+				<div class="col-sm-12 view-col-colaborador">
+					<label><b>Endereço residencial: </b></label>
+					<input type="text" class="form-control" data-ng-model="tabela.colaborador.enderecoResidencal"  >
+				</div>
+				<div class="col-sm-6 view-col-colaborador">
+					<label><b>Complemento: </b></label>
+					<input type="text" class="form-control" data-ng-model="tabela.colaborador.complemento"  >
+				</div>
+				<div class="col-sm-6 view-col-colaborador">
+					<label><b>Cidade: </b></label>
+					<input type="text" class="form-control" data-ng-model="tabela.colaborador.cidade"  >
+				</div>
+				<div class="col-sm-5 view-col-colaborador">
+					<label><b>Bairro: </b></label>
+					<input type="text" class="form-control" data-ng-model="tabela.colaborador.bairro"  >
+				</div>
+				<div class="col-sm-4 view-col-colaborador">
+					<label><b>CEP: </b></label>
+					<input type="text" class="form-control" ui-mask="99999-999" data-ng-model="tabela.colaborador.cep"  >
+				</div>
+				<div class="col-sm-3 view-col-colaborador">
+					<label><b>UF (Residencia): </b></label>
+					<select data-ng-model="tabela.colaborador.ufResId" class="form-control"
+						data-ng-options="v.nome for v in tabela.apoio.uf">
+						<option value=""></option>
+					</select>
+				</div>
+				<div class="col-sm-4 view-col-colaborador">
+					<label><b>Telefone (Celular): </b></label>
+					<input type="text" class="form-control" ui-mask="(99) 9999-9999?9" data-ng-model="tabela.colaborador.telefoneCelular"  >
+				</div>
+				<div class="col-sm-4 view-col-colaborador">
+					<label><b>Telefone (Residencial): </b></label>
+					<input type="text" class="form-control" ui-mask="(99) 9999-9999?9" data-ng-model="tabela.colaborador.telefoneResidencial"  >
+				</div>
+				<div class="col-sm-4 view-col-colaborador">
+					<label><b>Telefone (Comercial): </b></label>
+					<input type="text" class="form-control" ui-mask="(99) 9999-9999?9" data-ng-model="tabela.colaborador.telefoneComercial"  >
+				</div>
+				<div class="col-sm-12 view-col-colaborador">
+					<label><b>E-mail: </b></label>
+					<input type="text" class="form-control" data-ng-model="tabela.colaborador.email"  >
+				</div>
+			</div>
+			<div class="row" data-ng-show="tabela.aba == 1">
+				<div class="col-sm-4 view-col-colaborador">
+					<label><b>CPF: </b></label>
+					<input type="text" class="form-control" ui-mask="999.999.999-99" data-ng-model="tabela.colaborador.cpf" data-ng-disabled="true" >
+				</div>
+				<div class="col-sm-4 view-col-colaborador">
+					<label><b>CNPJ (PJ): </b></label>
+					<input type="text" class="form-control" ui-mask="99.999.999/9999-99" data-ng-model="tabela.colaborador.cnpjColaboradorPj"  >
+				</div>
+				<div class="col-sm-4 view-col-colaborador">
+					<label><b>Data de nascimento: </b></label>
+					<input type="text" class="form-control" ui-mask="99/99/9999" data-ng-model="tabela.colaborador.nascimento"  >
+				</div>
+				<div class="col-sm-6 view-col-colaborador">
+					<label><b>Naturalidade: </b></label>
+					<input type="text" class="form-control" data-ng-model="tabela.colaborador.naturalidade"  >
+				</div>
+				<div class="col-sm-6 view-col-colaborador">
+					<label><b>Sexo: </b></label>
+					<select data-ng-model="tabela.colaborador.sexoId" class="form-control"
+						data-ng-options="v.nome for v in tabela.apoio.sexo">
+						<option value=""></option>
+					</select>
+				</div>
+				<div class="col-sm-4 view-col-colaborador">
+					<label><b>CTPS: </b></label>
+					<input type="text" class="form-control" data-ng-model="tabela.colaborador.ctps"  >
+				</div>
+				<div class="col-sm-4 view-col-colaborador">
+					<label><b>Série (CTPS): </b></label>
+					<input type="text" class="form-control" data-ng-model="tabela.colaborador.ctpsSerie"  >
+				</div>
+				<div class="col-sm-4 view-col-colaborador">
+					<label><b>UF (CTPS): </b></label>
+					<select data-ng-model="tabela.colaborador.ctpsUfId" class="form-control"
+						data-ng-options="v.nome for v in tabela.apoio.uf">
+						<option value=""></option>
+					</select>
+				</div>
+				<div class="col-sm-4 view-col-colaborador">
+					<label><b>PIS: </b></label>
+					<input type="text" class="form-control" data-ng-model="tabela.colaborador.pis"  >
+				</div>
+				<div class="col-sm-4 view-col-colaborador">
+					<label><b>Matrícula: </b></label>
+					<input type="text" class="form-control" data-ng-model="tabela.colaborador.matricula"  >
+				</div>
+				<div class="col-sm-4 view-col-colaborador">
+					<label><b>Data de admissão: </b></label>
+					<input type="text" class="form-control" ui-mask="99/99/9999" data-ng-model="tabela.colaborador.admissao"  >
+				</div>
+				<div class="col-sm-6 view-col-colaborador">
+					<label><b>Origem dos recursos: </b></label>
+					<select data-ng-model="tabela.colaborador.origemDoRecursos" class="form-control"
+						data-ng-options="v for v in tabela.apoio.origemDosRecursos">
+						<option value=""></option>
+					</select>
+				</div>
+				<div class="col-sm-6 view-col-colaborador">
+					<label><b>Cargo: </b></label>
+					<select data-ng-model="tabela.colaborador.cargoId" class="form-control"
+						data-ng-options="v.nome for v in tabela.apoio.cargo">
+						<option value=""></option>
+					</select>
+				</div>
+				<div class="col-sm-6 view-col-colaborador">
+					<label><b>Empresa: </b></label>
+					<ui-select
+                        data-ng-model="tabela.colaborador.empresaId"
+                        theme="bootstrap"
+                        data-ng-disabled="disabled"> <ui-select-match
+                        placeholder="Selecione...">{{$select.selected.nome}}</ui-select-match> <ui-select-choices
+                        repeat="item as item in tabela.apoio.empresa | filter: $select.search">
+                    <div ng-bind-html="item.nome | highlight: $select.search"></div>
+				</div>
+				<div class="col-sm-6 view-col-colaborador">
+					<label><b>Filial: </b></label>
+					<ui-select
+                        data-ng-model="tabela.colaborador.filialId"
+                        theme="bootstrap"
+                        data-ng-disabled="disabled"> <ui-select-match
+                        placeholder="Selecione...">{{$select.selected.nome}}</ui-select-match> <ui-select-choices
+                        repeat="item as item in tabela.colaborador.empresaId.listFilial | filter: $select.search">
+                    <div ng-bind-html="item.nome | highlight: $select.search"></div>
+				</div>
+				<div class="col-sm-6 view-col-colaborador">
+					<label><b>Centro de custo: </b></label>
+					<ui-select
+						data-ng-model="tabela.colaborador.centroDeCustoId"
+						theme="bootstrap"
+						data-ng-keyup="tabela.buscarCentroDeCusto($select.search)"
+						data-ng-disabled="disabled"> <ui-select-match
+						placeholder="Selecione...">{{$select.selected.nome}}</ui-select-match> <ui-select-choices
+						repeat="item as item in tabela.listaCentroDeCusto | filter: $select.search">
+					<div ng-bind-html="item.nome | highlight: $select.search"></div>
+					</ui-select-choices> </ui-select>
+				</div>
+				<div class="col-sm-6 view-col-colaborador">
+					<label><b>Hierarquia: </b></label>
+					<ui-select
+                        data-ng-model="tabela.colaborador.hierarquiaId"
+                        theme="bootstrap"
+                        data-ng-disabled="disabled"> <ui-select-match
+                        placeholder="Selecione...">{{$select.selected.nome}}</ui-select-match> <ui-select-choices
+                        repeat="item as item in tabela.colaborador.centroDeCustoId.hierarquia | filter: $select.search">
+                    <div ng-bind-html="item.nome | highlight: $select.search"></div>
+				</div>
+				<div class="col-sm-6 view-col-colaborador">
+					<label><b>Situação: </b></label>
+					<select data-ng-model="tabela.colaborador.situacaoId" class="form-control"
+						data-ng-options="v.nome for v in tabela.apoio.situacao">
+						<option value=""></option>
+					</select>
+				</div>
+				<div class="col-sm-6 view-col-colaborador">
+					<label><b>Turno: </b></label>
+					<select data-ng-model="tabela.colaborador.turnoId" class="form-control"
+						data-ng-options="v.nome for v in tabela.apoio.turno">
+						<option value=""></option>
+					</select>
+				</div>
+				<div class="col-sm-6 view-col-colaborador">
+					<label><b>Tipo de constratação: </b></label>
+					<select data-ng-model="tabela.colaborador.tipoContratacaoId" class="form-control"
+						data-ng-options="v.nome for v in tabela.apoio.tipoContratacao">
+						<option value=""></option>
+					</select>
+				</div>
+				<div class="col-sm-6 view-col-colaborador">
+					<label><b>Sindicato: </b></label>
+					<select data-ng-model="tabela.colaborador.sindicatoId" class="form-control"
+						data-ng-options="v.nome for v in tabela.apoio.sindicato">
+						<option value=""></option>
+					</select>
+				</div>
+				<div class="col-sm-3 view-col-colaborador">
+					<label><b>Data de demissão: </b></label>
+					<input type="text" class="form-control" ui-mask="99/99/9999" data-ng-model="tabela.colaborador.dataDemissao"  >
+				</div>
+				<div class="col-sm-9 view-col-colaborador">
+					<label><b>Motivo da demissão: </b></label>
+					<input type="text" class="form-control" data-ng-model="tabela.colaborador.motivoDaDemissao"  >
+				</div>
+			</div>
+		</div>
+	<div class="panel-footer" style="text-align:right">
+		<button class="btn btn-danger" data-ng-click="tela.ativar('tabela')">Cancelar <span class="glyphicon glyphicon-remove"></span></button>
+		<button class="btn btn-primary" data-ng-click="tabela.salvar()">Salvar <span class="glyphicon glyphicon-plus"></span></button>
+	</div>
+	</div>
+</div>

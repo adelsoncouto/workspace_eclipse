@@ -1,0 +1,100 @@
+<?php
+
+require_once "model/Animal.php";
+require_once "model/Categoria.php";
+
+class MainController
+{
+	public function __construct()
+	{
+		if(empty($_SESSION['categoria']))
+		{
+			$agua  = new Categoria('Água');
+			$terra = new Categoria('Terra');
+			
+			$tubarao = new Animal(0, 'tubarao', null);
+			$macaco = new Animal(0, 'macaco', null);
+			
+			$terra->addFilho($macaco);
+			$agua->addFilho($tubarao);
+			
+			$categorias = [serialize($agua), serialize($terra)];
+			
+			$_SESSION['categoria'] = $categorias;
+			$_SESSION['pai'] = null;
+			$_SESSION['eu'] = null;
+		}
+		
+	}
+
+	public function init()
+	{
+		require_once "view/inicio.php";
+	}
+	
+	public function start()
+	{
+		$_SESSION['pai'] = $_SESSION['categoria'][0];
+		
+		$pai = unserialize($_SESSION['pai']);
+		
+		$_SESSION['eu'] = serialize($pai->getFilhos()[0]);
+		
+		$_REQUEST['msg'] = $pai->getPergunta();
+		
+		require_once "view/pergunta.php";
+	}
+	
+	public function pergunta()
+	{
+		$pai = unserialize($_SESSION['pai']);
+		$eu  = unserialize($_SESSION['eu']);
+		
+		if($_GET['resp'] == 'sim'){
+			$_REQUEST['msg'] = 's';
+			if(empty($eu->getFilhos())){
+				$_REQUEST['msg'] = "O animal que você pensou é ".$eu->getNome().'?';
+			}else{
+				$_REQUEST['msg'] = 'a';
+			}
+		}else if($_GET['resp'] == 'nao'){
+			$_REQUEST['msg'] = 'n';
+			$id = $eu->getId() + 1;
+			
+			if($pai->getNome() == 'Terra'){
+				echo 'a';
+				$pai = unserialize($_SESSION['categoria'][0]);
+				$eu  = $pai->getFilhos()[0];
+				$_REQUEST['msg'] = $eu->getPergunta();
+				require_once "view/pergunta.php";
+				return;
+			}
+			
+			if($pai->getNome() == 'Água'){
+				$pai = unserialize($_SESSION['categoria'][1]);
+				$eu  = $pai->getFilhos()[0];
+				
+				if(count($pai->getFilhos())>1){
+					$eu = $pai->getFilhos()[1];
+				}
+				
+				print_r($pai);
+				print_r($eu);
+				$_REQUEST['msg'] = $eu->getPergunta();
+				require_once "view/pergunta.php";
+				return;
+			}
+			
+			if(empty($pai->getFilhos()[$id])){
+				$_REQUEST['msg'] = 'Qual o animal que você pensou?';
+			}else{
+				$eu = $pai->getFilhos()[$id];
+				$_REQUEST['msg'] = $eu->getPergunta();
+			}
+		}else{
+			$_REQUEST['msg'] = 'o';
+		}
+		require_once "view/pergunta.php";
+	}
+	
+}

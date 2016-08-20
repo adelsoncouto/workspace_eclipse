@@ -1,0 +1,15 @@
+<?php
+namespace Model\Client;
+
+class Teste extends Client{
+	
+	public function __construct($aRequest, $aLazy = true) {
+		parent::__construct($aRequest, $aLazy);
+	}
+	
+	public function a(){
+		$usuario = new SistemaUsuario($this->_request);
+		$usuario->validarUsuario(c_colaborador);
+		return $usuario->getColaborador()->toArray();
+	}
+}

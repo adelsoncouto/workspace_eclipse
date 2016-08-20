@@ -1,0 +1,39 @@
+<?php
+
+require_once "interface/MainInterface.php";
+
+class Categoria implements MainInterface
+{
+    
+    private $filhos;
+    private $nome;
+    private $pergunta;
+    
+    public function __construct($nome)
+    {
+        $this->nome = $nome;
+        $this->pergunta = 'O animal que voce pensou vive na ';   
+        $this->filhos = [];
+    }
+    
+    public function getFilhos()
+    {
+        return $this->filhos;
+    }
+    
+    public function getNome()
+    {
+        return $this->nome;
+    }
+    
+    public function getPergunta()
+    {
+        return $this->pergunta.$this->getNome()."?";
+    }
+    
+    public function addFilho($filho)
+    {
+        $this->filhos[] = $filho;
+    }
+    
+}

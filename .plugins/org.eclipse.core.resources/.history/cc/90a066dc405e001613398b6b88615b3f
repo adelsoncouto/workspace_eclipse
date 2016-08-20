@@ -1,0 +1,143 @@
+<?php
+namespace Model\Client;
+
+
+use Model\Model\Habilidade as HabilidadeModel;
+use Model\Banco\SistemaConexao;
+use Model\Model\ColaboradorHabilidade;
+
+class Habilidade extends Client {
+
+	public function __construct($aRequest, $aLazy = true) {
+		parent::__construct($aRequest, $aLazy);
+	}
+	
+	/**
+	 * Método responsável por cadastrar nova opção de habiliade
+	 * @throws \Exception se não for informado ou se a habilidade já existir
+	 * @params [params=>nome da habiliade]
+	 * @return boolean
+	 */
+	public function cadastrarOpcao(){
+		$usuario = new SistemaUsuario("habilidade_opcao", $this->_request);
+		$usuario->validarUsuario();
+		$habilidade = new HabilidadeModel();
+		$habilidade->setHabilidade($this->_request["params"]);
+		$sql = "select count(1) qtd from habilidade where habilidade=:h";
+		$pst = SistemaConexao::getInstance()->prepare($sql);
+		$pst->execute([":h"=>$this->_request["params"]]);
+		$qtd = $pst->fetch(\PDO::FETCH_ASSOC)["qtd"];
+		if($qtd > 0){
+			throw new \Exception("Habilidade já cadastrada", -1);
+		}
+		if(empty($habilidade->getHabilidade())){
+			throw new \Exception("Informe uma habilidade", -2);
+		}
+		$habilidade->salvar();
+		return true;
+	}
+	
+	/**
+	 * Método responsável por retornar a lista de habilidades com base no like do nome
+	 * @return HabilidadeModel[] no formato de array 
+	 */
+	public function listarOpcao(){
+		$hab = new HabilidadeModel();
+		$sql = "select ".$hab->dePara()." from habilidade where habilidade like :h limit 10";
+		$listaHab = $hab->listarPorSql($sql, [":h"=>"%".$this->_request["params"]."%"]);
+		$result = [];
+		
+		/** @var \Model\Model\Habilidade $vH */
+		foreach ($listaHab as $vH){
+			$result[] = $vH->toArray();
+		}
+		return $result;
+	}
+	
+	/**
+	 * Método responsável por cadastrar uma habilidade para o colaborador logado
+	 * @throws \Exception
+	 * @return boolean
+	 */
+	public function cadastrar(){
+		$usuario = new SistemaUsuario("colaborador_habilidade", $this->_request);
+		$usuario->validarUsuario();
+		
+		if(empty($this->_request["params"]["habilidadeId"])){
+			throw new \Exception("Informe uma habilidade", -2);
+		}
+		if(empty($this->_request["params"]["observacao"])){
+			throw new \Exception("Detalhe sua habilidade", -2);
+		}
+		
+		$habilidade = new HabilidadeModel($this->_request["params"]["habilidadeId"]);
+		if(empty($habilidade->getId())){
+			throw new \Exception("Habilidade inválida", -2);
+		}
+		
+		$ch = new ColaboradorHabilidade();
+		$listaCh = $ch->buscarPorColaborador($usuario->getColaborador()->getId());
+		foreach ($listaCh as $vCh){
+			if($vCh->getHabilidadeId() == $habilidade->getId()){
+				throw new \Exception("Habilidade já cadastrada", -2);
+			}
+		}
+		
+		$ch->setColaboradorId($usuario->getColaborador()->getId());
+		$ch->setHabilidadeId($habilidade->getId());
+		$ch->setObservacao($this->_request["params"]["observacao"]);
+		
+		$ch->salvar();
+		return true;
+	}	
+
+	/**
+	* Método responsável por deletar uma habiliade de um colaborador
+	* @params int [params=>idHabilidade]
+	* @exception \Exception
+	* @return bool
+	*/
+	public function deletar(){
+		$usuario = new SistemaUsuario("colaborador_habilidade", $this->_request);
+		$usuario->validarUsuario();
+		
+		if(empty($this->_request["params"])){
+			throw new \Exception("Informe uma habilidade para ser removida", -1);
+		}
+		
+		$ch = new ColaboradorHabilidade();
+		
+		$listaCh = $ch->buscarPorColaborador($usuario->getColaborador()->getId());
+		
+		foreach ($listaCh as $vHab){
+			if($vHab->getColaboradorId() == $usuario->getColaborador()->getId()){
+				$vHab->deletar();
+			}
+		}
+		
+		return true;
+		
+	}
+	
+	/**
+	* Método responsável por listar as habilidades de um colaborador
+	*/
+	public function listar(){
+		$usuario = new SistemaUsuario("c_colaborador", $this->_request);
+		$usuario->validarUsuario();
+		
+		$chh = new ColaboradorHabilidade();
+		
+		/** @var \Model\Model\ColaboradorHabilidade[] $listaChh */
+		$listaChh = $chh->buscarPorColaborador($usuario->getColaborador()->getId());
+		$result = array();
+		
+		foreach ($listaChh as $vChh){
+			$hab = new \Model\Model\Habilidade($vChh->getHabilidadeId());
+			$result[] = $hab->toArray();
+		}
+		return $result;
+		
+	}
+	
+}

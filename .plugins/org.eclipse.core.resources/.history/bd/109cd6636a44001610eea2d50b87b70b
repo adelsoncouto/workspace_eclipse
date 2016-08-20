@@ -1,0 +1,303 @@
+<?php
+namespace Model\Dashboard\Financeiro;
+
+use Model\Dashboard\Financeiro\Hora;
+use Model\Dashboard\Financeiro\Sindicato;
+use Model\Dashboard\Financeiro\Feriado;
+
+class CalculaCusto{
+	
+	/** @var Hora $hora */
+	private $listHora;
+	
+	/** @var Sindicato $sindicato */
+	private $sindicato;
+	
+	/** @var array(Hora) $listHoraPorDiaAndTipo */
+	private $listHoraPorDiaAndTipo;
+	
+	/** @var Salario $salario */
+	private $salario;
+	
+	 //TODO: Criar o retorno de verbas
+	/**
+	 * Calcula os custos 
+	 * @param array(Model\Dashboard\Financeiro\Hora) $aListHora hora a ser verificada
+	 * @param Sindicato $aSindicato sindicato a ser considerado
+	 * @param Salario $aSalario salario do colaborador
+	 */
+	public function __construct(array $aListHora, Sindicato $aSindicato, 
+			Salario $aSalario){
+		$this->listHora = $aListHora;
+		$this->sindicato = $aSindicato;
+		$this->salario = $aSalario;
+	}
+	
+	/**
+	* Método responsável por verificar se o trabalho foi feito no domingo
+	* @param \Model\Dashboard\Financeiro\Hora $aHora
+	*/
+	public function isDomingo(Hora $aHora){
+		
+		if($aHora->getData()->format("w") == 0){
+			return true;
+		}
+		
+		return false;
+	}
+
+	/**
+	* Método responsável por verificar se o trabalho foi feito no sábado
+	* @param \Model\Dashboard\Financeiro\Hora $aHora
+	*/
+	public function isSabado(Hora $aHora){
+		
+		if($aHora->getData()->format("w") == 6){
+			return true;
+		}
+		
+		return false;
+	}
+
+	/**
+	* Método responsável por verificar se o trabalho foi feito em feriado 
+	* @param \Model\Dashboard\Financeiro\Hora $aHora
+	*/
+	public function isFeriado(Hora $aHora){
+	
+		try{
+			/** @var Feriado $feriado */
+			$feriado = new Feriado(null, $aHora->getData());
+			
+			return true;
+			
+		}catch (\Exception $e){
+			
+			return false;
+			
+		}
+	}
+
+	/**
+	* Método responsável por verificar se o trabalho foi feito em dia útil
+	* @param \Model\Dashboard\Financeiro\Hora $aHora
+	*/
+	public function isDiaUtil(Hora $aHora){
+		if($this->isDomingo($aHora)){
+			return false;
+		}
+		
+		if($this->isSabado($aHora)){
+			return false;
+		}
+		
+		if($this->isFeriado($aHora)){
+			return false;
+		}
+		
+		return true;
+	}
+
+	/**
+	* Método responsável por agrupar as horas em tipos por dia
+	*/
+	public function agruparDiaAndTipo(){
+		
+		foreach($this->listHora as $kHora=>$vHora/** @var Hora $vHora */){
+			//gera o key
+			$key = $vHora->getData()->format("Y-m-d")
+					."_".$vHora->getTipo();
+			
+			//cria um indice para o dia e o tipo se não existir
+			if(!isset($this->listHoraPorDiaAndTipo[$key])){
+				$this->listHoraPorDiaAndTipo[$key] = [];
+			}
+			
+			//adiciona a hora no indice
+			$this->listHoraPorDiaAndTipo[$key][] =$vHora;
+		}
+	}
+	
+	/**
+	* Método responsável por agrupar as verbas por hora 
+	* trabalhadas sequencialmente, caso de são paulo por exemplo
+	* @param array(Hora) $aListHora lista de horas a ser subdivida 
+	* devem ser todas do mesmo dia depois de passar por agruparDiaAndTipo
+	* @return array(SindicatoHasVerba::id[Hora])
+	*/
+	public function agruparHoraExtraPorVerba(array $aListHora){
+		
+		//para se não tiver lista de horas, pois é necessário saber o dia
+		if(empty($aListHora)){
+			return $listHora;
+		}
+		
+		//pega a primeira hora pois todas devem estar no mesmo dia
+		/** @var \Model\Dashboard\Financeiro\Hora $hora */
+		$hora = $aListHora[0];
+		
+		//começa com dias úteis e altera se for dia diferente
+		$dia = "Dias úteis";
+		$dia = $this->isSabado($hora)?"Sábado":$dia;
+		$dia = $this->isDomingo($hora)?"Domingo":$dia;
+		$dia = $this->isFeriado($hora)?"Feriado":$dia;
+		
+		//pega as duas verbas, a que inicia em 00:00:00 e a outra
+		$verbaInicio = null;/** @var SindicatoHasVerba $verbaInicio */
+		$verbaFim = null;/** @var SindicatoHasVerba $verbaFim */
+		
+		//pega as verbas
+		/** @var \Model\Dashboard\Financeiro\SindicatoHasVerba $vVerba */
+		foreach($this->sindicato->getListVerba() as $kVerba=>$vVerba){
+			if($vVerba->getTipoHora() == "Hora extra" 
+					&& $vVerba->getDia() == $dia){
+				if($vVerba->getHoraInicio() == "00:00:00"){
+					$verbaInicio = $vVerba;
+				}else{
+					$verbaFim = $vVerba;
+				}
+			}
+		}
+		
+		//para se não econtrou verba
+		if(empty($verbaInicio)){
+			throw new \Exception("O sindicato ".$this->sindicato->getNome()
+					." não tem verba de hora extra",
+					-debug_backtrace()[0]['line']);
+		}
+		
+		//redivide as horas
+		$listHora = array();
+		
+		//se houver só a verba de inicio então todas as horas serão dessa verba
+		if(empty($verbaFim)){
+			$listHora[0] = [
+				'verba'=>$verbaInicio,
+				'horas'=>$aListHora	
+			];
+			return $listHora;
+		}
+		
+		//adiciona as verbas na lista de hora
+		$listHora[0] = [
+			'verba'=>$verbaInicio,
+			'horas'=>[]
+		];
+		$listHora[1] = [
+			'verba'=>$verbaFim,
+			'horas'=>[]
+		];
+		
+		//quantidade de horas iniciais
+		$qtdPrimeirasHoras = 0;
+		
+		//ordena a lista de horas de forma crescente a partir da hora de inicio
+		usort($aListHora, array($this,"ordenarPorDataCrescente"));
+		
+		//percorre as horas
+		/** @var \Model\Dashboard\Financeiro\Hora $vHora */
+		foreach($aListHora as $kHora=>$vHora){
+			
+			//soma as horas com as primeira
+			$somaQtdHora = $qtdPrimeirasHoras + $vHora->getTotalHora();
+			
+			
+		}
+		
+		return $listHora;
+			
+	}
+
+	/**
+	* Método responsável por ordenar a lista de horas por hora de inicio de 
+	* forma crescente
+	* @param Hora $a
+	* @param Hora $b
+	*/
+	private function ordenarPorDataCrescente($a, $b){
+		
+		/** @var \DateTime $inicioA */
+		$inicioA = \DateTime::createFromFormat("H:i:s", $a->getInicio());
+		
+		/** @var \DateTime $inicioB */
+		$inicioB = \DateTime::createFromFormat("H:i:s", $b->getInicio());
+		
+		return $inicioA->getTimestamp() - $inicioB->getTimestamp();
+	}
+	
+	/**
+	* Método responsável por calcular o custo do sobreaviso
+	* @return float Valor total do custo do sobreaviso
+	*TODO: Este código não está considerando a possibilidade de haver a 
+	 * divisão de sobreaviso como o de hora extra, onde as primeiras horas
+	 * tem um percentual e as demais pode ter outro percentual diferente
+	 * ou por dia, domingo é um, sábado é outro, etc.
+	*/ 
+	public function custoSobreaviso(){
+		$valor = 0.00;
+		
+		//pega a verba
+		$verba = null;/** @var SindicatoHasVerba $verba */
+		
+		/** @var \Model\Dashboard\Financeiro\SindicatoHasVerba $vVerba */
+		foreach ($this->sindicato->getListVerba() as $kVerba => $vVerba){
+			if($vVerba->getTipoHora() == "Sobreaviso"){
+				$verba = $vVerba;
+			}
+		}
+		
+		
+		//seta o valor
+		foreach ($this->listHora as $kHora => $vHora){/**@var Hora $vHora*/
+			if($vHora->getTipo() == "Sobreaviso"){
+				
+				//total de hora * salário por hora * indice de sobreaviso
+				
+				$valor += $vHora->getTotalHora() 
+							* $this->salario->getValorHora()
+							* (float)$verba->getVerba()->getParametro2()
+				;
+			}
+		}
+		
+		return $valor;
+	}
+	
+	/**
+	* Método responsável por calcular o custo da hora extra
+	* @return float Valor total do custo das horas extras
+	* TODO: considera somente a possibilidade de duas sequências de horas no 
+	* mesmo dia, ou seja: de 0 a X e de X até o fim
+	*/
+	public function custoHoraExtra(){
+		$valor = 0.00;
+		
+		//agrupa as horas por dia
+		$this->agruparDiaAndTipo();
+		
+		//percorre o resulado do agrupamento por dia
+		foreach($this->listHoraPorDiaAndTipo as $kDataTipo => $vListHora){
+			
+			//agrupa as horas do dia por verba
+			$lista = $this->agruparHoraExtraPorVerba($vListHora);
+			foreach($lista as $k=>$vVerbaHoras){
+				
+				//pega a verba
+				/** @var SindicatoHasVerba $verba */
+				$verba = $vVerbaHoras["verba"];
+				
+				foreach ($vVerbaHoras["horas"] as $k => $vHora){
+					
+					//calcula o valor da hora
+					$valor += $vHora->getTotalHora() 
+							* $this->salario->getValorHora()
+							* (float)$verba->getVerba()->getParametro2();
+				}
+			}
+		}
+		
+		return $valor;
+	}
+	
+	
+}

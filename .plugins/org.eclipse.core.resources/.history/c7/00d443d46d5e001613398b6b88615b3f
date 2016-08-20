@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Insert title here</title>
+<script
+	type="text/javascript"
+	src="../lib/jquery/jquery-2.1.4.min.js"
+></script>
+</head>
+<body>
+
+	<table id="tabela">
+		<thead>
+			<tr>
+				<th
+					onclick="table.filtrar(this)"
+					style="cursor: pointer"
+				>NOME</th>
+				<th
+					onclick="table.filtrar(this)"
+					style="cursor: pointer"
+				>SOBRENOME</th>
+				<th
+					onclick="table.filtrar(this)"
+					style="cursor: pointer"
+				>IDADE</th>
+			</tr>
+		</thead>
+
+		<tbody>
+			<tr>
+				<td>CVH</td>
+				<td>GMT</td>
+				<td>14</td>
+			</tr>
+			<tr>
+				<td>ZZH</td>
+				<td>FIQ</td>
+				<td>40</td>
+			</tr>
+			<tr>
+				<td>NZK</td>
+				<td>IHA</td>
+				<td>24</td>
+			</tr>
+			<tr>
+				<td>JEI</td>
+				<td>AFU</td>
+				<td>52</td>
+			</tr>
+			<tr>
+				<td>MQC</td>
+				<td>QKN</td>
+				<td>29</td>
+			</tr>
+			<tr>
+				<td>DHG</td>
+				<td>EPR</td>
+				<td>18</td>
+			</tr>
+			<tr>
+				<td>DXU</td>
+				<td>QJN</td>
+				<td>34</td>
+			</tr>
+			<tr>
+				<td>LGI</td>
+				<td>TOE</td>
+				<td>44</td>
+			</tr>
+			<tr>
+				<td>ATJ</td>
+				<td>RII</td>
+				<td>10</td>
+			</tr>
+			<tr>
+				<td>SOT</td>
+				<td>LHG</td>
+				<td>12</td>
+			</tr>
+			<tr>
+				<td>CSF</td>
+				<td>MII</td>
+				<td>19</td>
+			</tr>
+			<tr>
+				<td>AGT</td>
+				<td>DVC</td>
+				<td>38</td>
+			</tr>
+			<tr>
+				<td>ZTA</td>
+				<td>ANW</td>
+				<td>50</td>
+			</tr>
+			<tr>
+				<td>ISO</td>
+				<td>LTC</td>
+				<td>12</td>
+			</tr>
+			<tr>
+				<td>OXM</td>
+				<td>AZQ</td>
+				<td>26</td>
+			</tr>
+			<tr>
+				<td>YSZ</td>
+				<td>BAV</td>
+				<td>17</td>
+			</tr>
+			<tr>
+				<td>LRI</td>
+				<td>LLE</td>
+				<td>32</td>
+			</tr>
+			<tr>
+				<td>GUG</td>
+				<td>ASA</td>
+				<td>22</td>
+			</tr>
+			<tr>
+				<td>MJU</td>
+				<td>LFZ</td>
+				<td>44</td>
+			</tr>
+			<tr>
+				<td>QUO</td>
+				<td>ZZC</td>
+				<td>46</td>
+			</tr>
+			<tr>
+				<td>EXS</td>
+				<td>MNT</td>
+				<td>56</td>
+			</tr>
+			<tr>
+				<td>MRD</td>
+				<td>COG</td>
+				<td>47</td>
+			</tr>
+			<tr>
+				<td>IPQ</td>
+				<td>UBC</td>
+				<td>31</td>
+			</tr>
+			<tr>
+				<td>BGY</td>
+				<td>MDS</td>
+				<td>39</td>
+			</tr>
+			<tr>
+				<td>DEK</td>
+				<td>NPS</td>
+				<td>59</td>
+			</tr>
+			<tr>
+				<td>DWG</td>
+				<td>SDV</td>
+				<td>39</td>
+			</tr>
+			<tr>
+				<td>VFM</td>
+				<td>MYG</td>
+				<td>26</td>
+			</tr>
+			<tr>
+				<td>OBZ</td>
+				<td>WIF</td>
+				<td>43</td>
+			</tr>
+			<tr>
+				<td>TJZ</td>
+				<td>FRZ</td>
+				<td>32</td>
+			</tr>
+			<tr>
+				<td>VVG</td>
+				<td>XIH</td>
+				<td>14</td>
+			</tr>
+			<tr>
+				<td>FKI</td>
+				<td>DXZ</td>
+				<td>33</td>
+			</tr>
+			<tr>
+				<td>CFU</td>
+				<td>GNO</td>
+				<td>53</td>
+			</tr>
+		</tbody>
+	</table>
+	<script type="text/javascript">
+	
+	var table = new CouTable("tabela");
+	
+	function CouTable(aIdTable){
+	    var _this = this;
+	    this.table = null;
+	    this.resumo = {};
+	    this.body = document.getElementsByTagName("body")[0];
+	    
+	    this.selecionarTodo = function(){
+		  var _ok = $("#cou-table-item-todo").prop("checked");
+		  $(".cou-table-item").each(function(){
+		     $(this).prop("checked",_ok);
+		  });
+	    }
+	    
+	    this.filtrar = function(aElemTh){
+		    _this.remover();
+		    
+			var _posicao = $(aElemTh).position(); 
+			var _az = document.createElement("span");
+			var _za = document.createElement("span");
+			var _busca = document.createElement("input");
+			var _lista = document.createElement("div");
+			var _btOk = document.createElement("button");
+			var _btCancelar = document.createElement("button");
+			var _hr0 = document.createElement("hr");
+			var _hr1 = document.createElement("hr");
+			var _hr2 = document.createElement("hr");
+			var _hr3 = document.createElement("hr");
+
+			_btOk.onclick = _this.remover;
+		    _btOk.innerHTML = "Ok";
+		    
+		    _btCancelar.onclick = _this.remover;
+		    _btCancelar.innerHTML = "Cancelar";
+		    
+		    _az.style.cursor = "pointer";
+	        _az.style.display = "block";
+	        _az.innerHTML = "Classificar de A a Z";
+	          
+	        _za.style.cursor = "pointer";
+	        _za.style.display = "block";
+	        _za.innerHTML = "Classificar de Z a A";
+	          
+	        _busca.type = "text";
+	        _busca.style.width = "100%";
+	          
+	        _lista.style.width = "250px";
+	        _lista.style.height = "250px";
+	        _lista.style.overflow = "scroll";
+	        
+	        var _todos = document.createElement("span");
+	        _todos.innerHTML = "Todos";
+
+            var _itemTodos = document.createElement("input");
+            _itemTodos.type = "checkbox";
+            _itemTodos.checked = "checked";
+            _itemTodos.id = "cou-table-item-todo";
+            _itemTodos.onchange = _this.selecionarTodo;
+            
+            
+            var _divTodo = document.createElement("div");
+            _divTodo.appendChild(_itemTodos);
+            _divTodo.appendChild(_todos);
+            _divTodo.style.display = "block";
+            
+            _lista.appendChild(_divTodo);
+		    
+		    
+		    for(var i in _this.resumo[$(aElemTh).index()]){
+			    
+			    var _label = document.createElement("span");
+			    _label.innerHTML = i;
+
+			    var _item = document.createElement("input");
+			    _item.type = "checkbox";
+			    _item.checked = "checked";
+			    _item.className = "cou-table-item"
+			    
+			    var _div = document.createElement("div");
+			    _div.appendChild(_item);
+			    _div.appendChild(_label);
+			    _div.style.display = "block";
+			    
+			    _lista.appendChild(_div);
+			    
+		    }
+		    
+		    var _filtro = document.createElement("div");
+		    _filtro.style.top = (_posicao.top+$(aElemTh).height())+"px"; 
+		    _filtro.style.left = _posicao.left+"px"; 
+		    _filtro.style.position = "absolute";
+		    _filtro.style.background = "#ffffff";
+		    _filtro.style.padding = "10px";
+		    _filtro.style.border = "solid 1px #e1e1e1";
+		    _filtro.className = "cou-table-filtro";
+		    _filtro.appendChild(_az);
+		    _filtro.appendChild(_hr0);
+		    _filtro.appendChild(_za);
+		    _filtro.appendChild(_hr1);
+		    _filtro.appendChild(_busca);
+		    _filtro.appendChild(_hr2);
+		    _filtro.appendChild(_lista);
+		    _filtro.appendChild(_hr3);
+		    _filtro.appendChild(_btOk);
+		    _filtro.appendChild(_btCancelar);
+		    _this.body.appendChild(_filtro);
+	    };
+	    
+	    this.remover = function(){
+		  $(".cou-table-filtro").remove();
+	    };
+	    
+	    (function(){
+		  _this.table = $("#"+aIdTable);
+		  $(_this.table[0]).find("tr").each(function(aKeyTr){
+			  $(this).find("td").each(function(aKeyTd){
+			      if(_this.resumo[aKeyTd] === undefined){
+				   _this.resumo[aKeyTd] = {};
+			      }
+			      _this.resumo[aKeyTd][$(this).text()] = $(this).text();
+			  })
+		  })
+		  
+		  for(var i in _this.resumo){
+		      _this.resumo[i].sort(function (a, b) {
+		              return a.val.localeCompare( b.val );
+		          });
+		  }
+	    })();
+	}
+	
+	
+	
+	
+	(function($) {
+	    $.fn.couTable = function(options) {
+		var defaults = {
+		    'corDeFundo' : 'yellow'
+		};
+		var settings = $.extend({}, defaults, options);
+		return this.each(function() {
+		    $(this).css({
+			 background : settings.corDeFundo
+		    });
+		});
+	    };
+	})(jQuery);
+    </script>
+</body>
+</html>

@@ -1,0 +1,619 @@
+<?php
+namespace Model\Timesheet\Aprovar;
+
+date_default_timezone_set("America/Sao_Paulo");
+if(strcmp(basename($_SERVER['SCRIPT_NAME']), basename(__FILE__)) === 0){ exit("Acesso negado");}
+ini_set('memory_limit', '512M');
+ini_set('max_execution_time', 300);
+// ini_set("display_errors",1);
+// ini_set("display_startup_erros",1);
+// error_reporting(E_ALL);
+
+use Model\Banco\SistemaConexao;
+use Model\Client\SistemaUsuario;
+
+class CarregarDados { 
+	private $listMeusCentroDeCusto;
+	private $listMinhasHierarquia;
+	private $listMeusColaborador;
+	private $listHorasDosMeusColaborador;
+	private $listSindicato;
+	private $listHorasDosOutrosColaborador;
+	private $listCcDosOutrosColaborador;
+	private $listHierarquiaDosOutrosColaborador;
+	private $listCcMeuDosOutrosColaborador;
+	private $listOutrosColaborador;
+	private $listTotalHoraMeusColaboradores;
+	private $listTotalHoraOutrosColaboradores;
+	private $usuarioLogado;
+	private $_request;
+
+	/**
+	 * @param $aUsuarioLogado mesmo retornado de SistemaUsuario->verificarAcesso();
+	 * @param $aRequest mesma requisição que o usuário fez
+	 **/
+	public function __construct($aUsuarioLogado, $aRequest){
+		$this->_request = $aRequest;
+		$this->usuarioLogado = $aUsuarioLogado;
+		$this->listHorasDosOutrosColaborador = array();
+		$this->listCcDosOutrosColaborador = array();
+		$this->listHierarquiaDosOutrosColaborador = array();
+		$this->listCcMeuDosOutrosColaborador = array();
+		$this->listMeusColaborador = array();
+		$this->listMinhasHierarquia = array();
+		$this->listMeusCentroDeCusto = array();
+		$this->listHorasDosMeusColaborador = array();
+		$this->listOutrosColaborador = array();
+		$this->listSindicato = array();
+		$this->listTotalHoraMeusColaboradores = array();
+		$this->listTotalHoraOutrosColaboradores = array();
+	}
+
+	/**
+	 * Description
+	 * @return [array] 
+	        [
+	          	'listMeusCentroDeCusto',
+				'listMinhasHierarquia',
+				'listMeusColaborador',
+				'listHorasDosMeusColaborador',
+				'listSindicato',
+				'listHorasDosOutrosColaborador',
+				'listCcDosOutrosColaborador',
+				'listHierarquiaDosOutrosColaborador',
+				'listCcMeuDosOutrosColaborador',
+				'listOutrosColaborador',
+				'listTotalHoraMeusColaboradores',
+				'listTotalHoraOutrosColaboradores',
+	  		]
+	 */
+	public function dados(){
+
+		//verifica o tipo de acesso
+		$cruda = explode(',',$this->usuarioLogado['acesso']['crud']);
+		
+// 		não será verificado o tipo de acesso no crud pois para aprovar sempre terá que alterar
+		
+		//cria filtros para acesso global ou por projeto/hierarquia
+		$sqlFiltro = "";
+		
+		if($cruda[4] == '1'){
+			$sqlFiltro = "
+					and (cc.gerente_id = :id
+					or cc.gerente_operacao_id = :id
+					or cc.diretor_id = :id
+					or h.coordenador_id = :id
+					or h.supervisor_id = :id
+					or h.lider_id = :id)";
+		}
+		
+		$this->carregarSindicato();
+		$this->carregarMeusColaboradoresAndCentrosDeCustoAndHierarquias($sqlFiltro);
+
+		$meusCc = "(-1";
+		foreach($this->listMeusCentroDeCusto as $k=>$v){
+			$meusCc .= ",".$k;
+		}
+		$meusCc .= ")";
+
+		$this->carregarHoraDosMeusColaboradores($sqlFiltro, $meusCc);
+		$this->carregarHoraDosOutrosColaboradores($meusCc);
+
+		$this->agruparHorasPorColaborador();
+		
+		return [
+			'listMeusCentroDeCusto'=>$this->listMeusCentroDeCusto,
+			'listMinhasHierarquia'=>$this->listMinhasHierarquia,
+			'listMeusColaborador'=>$this->listMeusColaborador,
+			'listHorasDosMeusColaborador'=>$this->listHorasDosMeusColaborador,
+			'listSindicato'=>$this->listSindicato,
+			'listHorasDosOutrosColaborador'=>$this->listHorasDosOutrosColaborador,
+			'listCcDosOutrosColaborador'=>$this->listCcDosOutrosColaborador,
+			'listHierarquiaDosOutrosColaborador'=>$this->listHierarquiaDosOutrosColaborador,
+			'listCcMeuDosOutrosColaborador'=>$this->listCcMeuDosOutrosColaborador,
+			'listOutrosColaborador'=>$this->listOutrosColaborador,
+			'listTotalHoraMeusColaboradores'=>$this->listTotalHoraMeusColaboradores,
+			'listTotalHoraOutrosColaboradores'=>$this->listTotalHoraOutrosColaboradores
+		];
+
+	}
+
+	/**
+	 * Responsável por carregar a lista de todos os sindicatos
+	 */
+	private function carregarSindicato(){
+		//cria os sql para consultar
+		$sqlSindicato = "
+			SELECT
+				*
+			FROM
+				sindicato
+		";
+
+		//pega os dados
+		$psSindicato = SistemaConexao::getInstance()->prepare($sqlSindicato);
+		$psSindicato->execute();
+		while($row = $psSindicato->fetch(\PDO::FETCH_ASSOC)){
+			$this->listSindicato[$row['id']] = $row;
+		}
+	}
+
+	/**
+	 * Carrega todos os colaboradores sobre minha gestão, também inclui os centros de custos e hierarquias
+	 */
+	private function carregarMeusColaboradoresAndCentrosDeCustoAndHierarquias($aSqlFiltro){
+		$sqlColaborador = "
+			SELECT
+				c.id as cId,
+				c.nome as cNome,
+				c.cpf as cCpf,
+				c.cnpj_colaborador_pj as cCnpjColaboradorPj,
+				c.rg as cRg,
+				c.emissor as cEmissor,
+				c.uf_emissor_id as cUfEmissorId,
+				c.data_emissao as cDataEmissao,
+				c.ctps as cCtps,
+				c.ctps_serie as cCtpsSerie,
+				c.ctps_uf_id as cCtpsUfId,
+				c.pis as cPis,
+				c.pai as cPai,
+				c.mae as cMae,
+				c.quantidade_filho as cQuantidadeFilho,
+				c.nascimento as cNascimento,
+				c.naturalidade as cNaturalidade,
+				c.sexo_id as cSexoId,
+				c.estado_civil_id as cEstadoCivilId,
+				c.endereco_residencal as cEnderecoResidencal,
+				c.complemento as cComplemento,
+				c.cidade as cCidade,
+				c.bairro as cBairro,
+				c.cep as cCep,
+				c.uf_res_id as cUfResId,
+				c.telefone_celular as cTelefoneCelular,
+				c.telefone_residencial as cTelefoneResidencial,
+				c.telefone_comercial as cTelefoneComercial,
+				c.email as cEmail,
+				c.matricula as cMatricula,
+				c.admissao as cAdmissao,
+				c.origem_do_recursos as cOrigemDoRecursos,
+				c.data_demissao as cDataDemissao,
+				c.motivo_da_demissao as cMotivoDaDemissao,
+				c.cargo_id as cCargoId,
+				c.hierarquia_id as cHierarquiaId,
+				c.situacao_id as cSituacaoId,
+				c.turno_id as cTurnoId,
+				c.tipo_contratacao_id as cTipoContratacaoId,
+				c.usuario_id as cUsuarioId,
+				c.empresa_id as cEmpresaId,
+				c.filial_id as cFilialId,
+				c.sindicato_id as cSindicatoId,
+				c.municipio_id as cMunicipioId,
+				c.centro_de_custo_id as cCentroDeCustoId,
+				cc.id as ccId,
+				cc.nome as ccNome,
+				cc.codigo as ccCodigo,
+				cc.codigo_reduzido as ccCodigoReduzido,
+				cc.diretor_id as ccDiretorId,
+				cc.gerente_operacao_id as ccGerenteOperacaoId,
+				cc.gerente_id as ccGerenteId,
+				cc.empresa_id as ccEmpresaId,
+				cc.ativo as ccAtivo,
+				cc.tipo as ccTipo,
+				h.id as hId,
+				h.centro_de_custo_id as hCentroDeCustoId,
+				h.nome as hNome,
+				h.coordenador_id as hCoordenadorId,
+				h.supervisor_id as hSupervisorId,
+				h.codigo as hCodigo,
+				h.lider_id as hLiderId
+			FROM
+				colaborador c 
+				left join centro_de_custo cc on cc.id = c.centro_de_custo_id
+				left join hierarquia h on h.id = c.hierarquia_id 
+			WHERE 
+				c.id > 0
+				and c.situacao_id != 1
+				".$aSqlFiltro."
+			ORDER BY
+				c.nome
+				";
+		
+		$ps = SistemaConexao::getInstance()->prepare($sqlColaborador);
+		if($aSqlFiltro != ""){
+			$ps->bindValue(":id",$this->usuarioLogado['colaborador']['id']);
+		}
+		$ps->execute();
+		while($row = $ps->fetch(\PDO::FETCH_ASSOC)){
+			
+			//ignora os colaborador sem centro de custo
+			if(trim($row['ccId']) == ""){
+				continue;
+			}
+			
+			$this->listMeusColaborador[$row['cId']] = [
+					"cId"=>$row["cId"],
+					"cNome"=>$row["cNome"],
+					"cCpf"=>$row["cCpf"],
+					"cCnpjColaboradorPj"=>$row["cCnpjColaboradorPj"],
+					"cRg"=>$row["cRg"],
+					"cEmissor"=>$row["cEmissor"],
+					"cUfEmissorId"=>$row["cUfEmissorId"],
+					"cDataEmissao"=>$row["cDataEmissao"],
+					"cCtps"=>$row["cCtps"],
+					"cCtpsSerie"=>$row["cCtpsSerie"],
+					"cCtpsUfId"=>$row["cCtpsUfId"],
+					"cPis"=>$row["cPis"],
+					"cPai"=>$row["cPai"],
+					"cMae"=>$row["cMae"],
+					"cQuantidadeFilho"=>$row["cQuantidadeFilho"],
+					"cNascimento"=>$row["cNascimento"],
+					"cNaturalidade"=>$row["cNaturalidade"],
+					"cSexoId"=>$row["cSexoId"],
+					"cEstadoCivilId"=>$row["cEstadoCivilId"],
+
+					"cEnderecoResidencal"=>$row["cEnderecoResidencal"],
+					"cComplemento"=>$row["cComplemento"],
+					"cCidade"=>$row["cCidade"],
+					"cBairro"=>$row["cBairro"],
+					"cCep"=>$row["cCep"],
+					"cUfResId"=>$row["cUfResId"],
+					"cTelefoneCelular"=>$row["cTelefoneCelular"],
+					"cTelefoneResidencial"=>$row["cTelefoneResidencial"],
+					"cTelefoneComercial"=>$row["cTelefoneComercial"],
+					"cEmail"=>$row["cEmail"],
+					"cMatricula"=>$row["cMatricula"],
+					"cAdmissao"=>$row["cAdmissao"],
+					"cOrigemDoRecursos"=>$row["cOrigemDoRecursos"],
+					"cDataDemissao"=>$row["cDataDemissao"],
+					"cMotivoDaDemissao"=>$row["cMotivoDaDemissao"],
+					"cCargoId"=>$row["cCargoId"],
+					"cHierarquiaId"=>$row["cHierarquiaId"],
+					"cSituacaoId"=>$row["cSituacaoId"],
+					"cTurnoId"=>$row["cTurnoId"],
+					"cTipoContratacaoId"=>$row["cTipoContratacaoId"],
+					"cUsuarioId"=>$row["cUsuarioId"],
+					"cEmpresaId"=>$row["cEmpresaId"],
+					"cFilialId"=>$row["cFilialId"],
+					"cSindicatoId"=>$row["cSindicatoId"],
+					"cMunicipioId"=>$row["cMunicipioId"],
+					"cCentroDeCustoId"=>$row["cCentroDeCustoId"]
+			];
+			
+			$this->listMeusCentroDeCusto[$row['ccId']] = [
+					"ccId"=>$row["ccId"],
+					"ccNome"=>$row["ccNome"],
+					"ccCodigo"=>$row["ccCodigo"],
+					"ccCodigoReduzido"=>$row["ccCodigoReduzido"],
+					"ccDiretorId"=>$row["ccDiretorId"],
+					"ccGerenteOperacaoId"=>$row["ccGerenteOperacaoId"],
+					"ccGerenteId"=>$row["ccGerenteId"],
+					"ccEmpresaId"=>$row["ccEmpresaId"],
+					"ccAtivo"=>$row["ccAtivo"],
+					"ccTipo"=>$row["ccTipo"]
+			];
+			
+			$this->listMinhasHierarquia[$row['hId']] = [
+					"hId"=>$row["hId"],
+					"hCentroDeCustoId"=>$row["hCentroDeCustoId"],
+					"hNome"=>$row["hNome"],
+					"hCoordenadorId"=>$row["hCoordenadorId"],
+					"hSupervisorId"=>$row["hSupervisorId"],
+					"hCodigo"=>$row["hCodigo"],
+					"hLiderId"=>$row["hLiderId"]
+			];
+		}
+		
+		$sqlh = "select 
+					id hId,
+					centro_de_custo_id hCentroDeCustoId,
+					nome hNome,
+					coordenador_id hCoordenadorId,
+					supervisor_id hSupervisorId,
+					codigo hCodigo,
+					lider_id hLiderId
+				from hierarquia 
+				where 
+					lider_id =:id 
+					or coordenador_id =:id
+					or supervisor_id =:id";
+		
+		$psh = SistemaConexao::getInstance()->prepare($sqlh);
+		$ps->bindValue(":id",$this->usuarioLogado['colaborador']['id']);
+		
+	}
+
+	/**
+	 * Carrega todas as horas dos colaboradores sob minha gestão
+	 */
+	private function carregarHoraDosMeusColaboradores($aSqlFiltro, $aMeusCentrosDeCusto){
+		$pcc = SistemaConexao::getInstance()->prepare("
+			SELECT cc.id FROM 
+				centro_de_custo cc 
+				left join hierarquia h on h.centro_de_custo_id = cc.id
+			WHERE cc.diretor_id=:id or cc.gerente_id=:id or cc.gerente_operacao_id=:id 
+				or h.coordenador_id =:id or h.lider_id =:id or h.supervisor_id =:id group by cc.id");
+		$pcc->bindValue(":id",$this->usuarioLogado['colaborador']['id']);
+		$pcc->execute();
+		$aMeusCentrosDeCusto = '(-1';
+		while($row = $pcc->fetch(\PDO::FETCH_ASSOC)){
+			$aMeusCentrosDeCusto .= ','.$row['id'];
+		}
+		$aMeusCentrosDeCusto .= ')';
+		$sqlHora = "
+			SELECT
+				hs.*
+			FROM
+				horas hs 
+				left join colaborador c on c.id = hs.colaborador_id
+				left join centro_de_custo cc on cc.id = c.centro_de_custo_id
+				left join hierarquia h on h.id = c.hierarquia_id
+			WHERE 
+			hs.id > 0
+			and c.situacao_id != 1
+			and hs.timesheet_id =:timesheetId
+			".$aSqlFiltro."
+			and  hs.projeto_id in ".$aMeusCentrosDeCusto."
+			GROUP BY 
+				hs.id;
+			";
+
+		$psHora = SistemaConexao::getInstance()->prepare($sqlHora);
+		$psHora->bindValue(":timesheetId",$this->_request['params']['timesheetId']);
+		if($aSqlFiltro != ""){
+			$psHora->bindValue(":id",$this->usuarioLogado['colaborador']['id']);
+		}
+		$psHora->execute();
+		while($row = $psHora->fetch(\PDO::FETCH_ASSOC)){
+			$this->listHorasDosMeusColaborador[$row["id"]] = $row;
+		}
+	}
+
+	/**
+	 * Carrega a lista de horas, centro de custo, hierarquia dos colaboradores que não estão sob minha 
+	 * gestão, mas lançaram horas par eu aprovar
+	 */
+	private function carregarHoraDosOutrosColaboradores($aMeusCentrosDeCusto){
+		$pcc = SistemaConexao::getInstance()->prepare("
+			SELECT cc.id FROM 
+				centro_de_custo cc 
+				left join hierarquia h on h.centro_de_custo_id = cc.id
+			WHERE cc.diretor_id=:id or cc.gerente_id=:id or cc.gerente_operacao_id=:id 
+				or h.coordenador_id =:id or h.lider_id =:id or h.supervisor_id =:id group by cc.id");
+		$pcc->bindValue(":id",$this->usuarioLogado['colaborador']['id']);
+		$pcc->execute();
+		$aMeusCentrosDeCusto = '(-1';
+		while($row = $pcc->fetch(\PDO::FETCH_ASSOC)){
+			$aMeusCentrosDeCusto .= ','.$row['id'];
+		}
+		$aMeusCentrosDeCusto .= ')';
+
+		$sqlHoraOutroColaborador = "
+				SELECT
+					c.id as cId,
+					c.nome as cNome,
+					c.cpf as cCpf,
+					c.cnpj_colaborador_pj as cCnpjColaboradorPj,
+					c.rg as cRg,
+					c.emissor as cEmissor,
+					c.uf_emissor_id as cUfEmissorId,
+					c.data_emissao as cDataEmissao,
+					c.ctps as cCtps,
+					c.ctps_serie as cCtpsSerie,
+					c.ctps_uf_id as cCtpsUfId,
+					c.pis as cPis,
+					c.pai as cPai,
+					c.mae as cMae,
+					c.quantidade_filho as cQuantidadeFilho,
+					c.nascimento as cNascimento,
+					c.naturalidade as cNaturalidade,
+					c.sexo_id as cSexoId,
+					c.estado_civil_id as cEstadoCivilId,
+					c.endereco_residencal as cEnderecoResidencal,
+					c.complemento as cComplemento,
+					c.cidade as cCidade,
+					c.bairro as cBairro,
+					c.cep as cCep,
+					c.uf_res_id as cUfResId,
+					c.telefone_celular as cTelefoneCelular,
+					c.telefone_residencial as cTelefoneResidencial,
+					c.telefone_comercial as cTelefoneComercial,
+					c.email as cEmail,
+					c.matricula as cMatricula,
+					c.admissao as cAdmissao,
+					c.origem_do_recursos as cOrigemDoRecursos,
+					c.data_demissao as cDataDemissao,
+					c.motivo_da_demissao as cMotivoDaDemissao,
+					c.cargo_id as cCargoId,
+					c.hierarquia_id as cHierarquiaId,
+					c.situacao_id as cSituacaoId,
+					c.turno_id as cTurnoId,
+					c.tipo_contratacao_id as cTipoContratacaoId,
+					c.usuario_id as cUsuarioId,
+					c.empresa_id as cEmpresaId,
+					c.filial_id as cFilialId,
+					c.sindicato_id as cSindicatoId,
+					c.municipio_id as cMunicipioId,
+					c.centro_de_custo_id as cCentroDeCustoId,
+					cc.id as ccId,
+					cc.nome as ccNome,
+					cc.codigo as ccCodigo,
+					cc.codigo_reduzido as ccCodigoReduzido,
+					cc.diretor_id as ccDiretorId,
+					cc.gerente_operacao_id as ccGerenteOperacaoId,
+					cc.gerente_id as ccGerenteId,
+					cc.empresa_id as ccEmpresaId,
+					cc.ativo as ccAtivo,
+					cc.tipo as ccTipo,
+					cchs.id as cchsId,
+					cchs.nome as cchsNome,
+					cchs.codigo as cchsCodigo,
+					cchs.codigo_reduzido as cchsCodigoReduzido,
+					cchs.diretor_id as cchsDiretorId,
+					cchs.gerente_operacao_id as cchsGerenteOperacaoId,
+					cchs.gerente_id as cchsGerenteId,
+					cchs.empresa_id as cchsEmpresaId,
+					cchs.ativo as cchsAtivo,
+					cchs.tipo as cchsTipo,
+					h.id as hId,
+					h.centro_de_custo_id as hCentroDeCustoId,
+					h.nome as hNome,
+					h.coordenador_id as hCoordenadorId,
+					h.supervisor_id as hSupervisorId,
+					h.codigo as hCodigo,
+					h.lider_id as hLiderId,
+					hs.id as id,
+					hs.colaborador_id as colaborador_id,
+					hs.projeto_id as projeto_id,
+					hs.timesheet_id as timesheet_id,
+					hs.tipo as tipo,
+					hs.inicio as inicio,
+					hs.fim as fim,
+					hs.dia as dia,
+					hs.status as status,
+					hs.justificativa as justificativa
+				FROM
+					horas hs
+					left join centro_de_custo cchs on cchs.id = hs.projeto_id
+					left join colaborador c on c.id = hs.colaborador_id
+					left join centro_de_custo cc on cc.id = c.centro_de_custo_id
+					left join hierarquia h on h.id = c.hierarquia_id
+				WHERE
+				hs.timesheet_id =:timesheetId
+				and (h.lider_id != :id or h.lider_id is null)
+				and (h.coordenador_id != :id or h.coordenador_id is null)
+				and (h.supervisor_id != :id or h.supervisor_id is null)
+				and (cc.gerente_id != :id or cc.gerente_id is null)
+				and (cc.gerente_operacao_id != :id or cc.gerente_operacao_id is null)
+				and (cc.diretor_id != :id or cc.diretor_id is null)
+				and (
+					cchs.gerente_id = :id
+					or cchs.gerente_operacao_id = :id
+					or cchs.diretor_id = :id
+				)
+				and hs.projeto_id in ".$aMeusCentrosDeCusto."
+				GROUP BY
+					hs.id, hs.projeto_id;
+				";
+		
+		$psHoraOutroColaborador = SistemaConexao::getInstance()->prepare($sqlHoraOutroColaborador);
+		$psHoraOutroColaborador->bindValue(":id",$this->usuarioLogado['colaborador']['id']);
+		$psHoraOutroColaborador->bindValue(":timesheetId",$this->_request['params']['timesheetId']);
+		$psHoraOutroColaborador->execute();
+		while($row = $psHoraOutroColaborador->fetch(\PDO::FETCH_ASSOC)){
+			if($row['cId'] == ''){
+				continue;
+			}
+
+			$rowc = array();//o colaborador
+			$rowcc = array();//o centro de custo do colaborador
+			$rowcchs = array();//o centro de custo que a hora foi lançada (o meu)
+			$rowh = array();//a hierarquia do colaborador
+			$rowhs = array();//a hora lançada
+			
+			$rowc['cId'] = $row['cId'];
+			$rowc['cNome'] = $row['cNome'];
+			$rowc['cCpf'] = $row['cCpf'];
+			$rowc['cCnpjColaboradorPj'] = $row['cCnpjColaboradorPj'];
+			$rowc['cRg'] = $row['cRg'];
+			$rowc['cEmissor'] = $row['cEmissor'];
+			$rowc['cUfEmissorId'] = $row['cUfEmissorId'];
+			$rowc['cDataEmissao'] = $row['cDataEmissao'];
+			$rowc['cCtps'] = $row['cCtps'];
+			$rowc['cCtpsSerie'] = $row['cCtpsSerie'];
+			$rowc['cCtpsUfId'] = $row['cCtpsUfId'];
+			$rowc['cPis'] = $row['cPis'];
+			$rowc['cPai'] = $row['cPai'];
+			$rowc['cMae'] = $row['cMae'];
+			$rowc['cQuantidadeFilho'] = $row['cQuantidadeFilho'];
+			$rowc['cNascimento'] = $row['cNascimento'];
+			$rowc['cNaturalidade'] = $row['cNaturalidade'];
+			$rowc['cSexoId'] = $row['cSexoId'];
+			$rowc['cEstadoCivilId'] = $row['cEstadoCivilId'];
+			$rowc['cEnderecoResidencal'] = $row['cEnderecoResidencal'];
+			$rowc['cComplemento'] = $row['cComplemento'];
+			$rowc['cCidade'] = $row['cCidade'];
+			$rowc['cBairro'] = $row['cBairro'];
+			$rowc['cCep'] = $row['cCep'];
+			$rowc['cUfResId'] = $row['cUfResId'];
+			$rowc['cTelefoneCelular'] = $row['cTelefoneCelular'];
+			$rowc['cTelefoneResidencial'] = $row['cTelefoneResidencial'];
+			$rowc['cTelefoneComercial'] = $row['cTelefoneComercial'];
+			$rowc['cEmail'] = $row['cEmail'];
+			$rowc['cMatricula'] = $row['cMatricula'];
+			$rowc['cAdmissao'] = $row['cAdmissao'];
+			$rowc['cOrigemDoRecursos'] = $row['cOrigemDoRecursos'];
+			$rowc['cDataDemissao'] = $row['cDataDemissao'];
+			$rowc['cMotivoDaDemissao'] = $row['cMotivoDaDemissao'];
+			$rowc['cCargoId'] = $row['cCargoId'];
+			$rowc['cHierarquiaId'] = $row['cHierarquiaId'];
+			$rowc['cSituacaoId'] = $row['cSituacaoId'];
+			$rowc['cTurnoId'] = $row['cTurnoId'];
+			$rowc['cTipoContratacaoId'] = $row['cTipoContratacaoId'];
+			$rowc['cUsuarioId'] = $row['cUsuarioId'];
+			$rowc['cEmpresaId'] = $row['cEmpresaId'];
+			$rowc['cFilialId'] = $row['cFilialId'];
+			$rowc['cSindicatoId'] = $row['cSindicatoId'];
+			$rowc['cMunicipioId'] = $row['cMunicipioId'];
+			$rowc['cCentroDeCustoId'] = $row['cCentroDeCustoId'];
+			$rowc['cMeuCentroDeCusto'] = $row['cchsId'];
+			
+			$rowcc['ccId'] = $row['ccId'];
+			$rowcc['ccNome'] = $row['ccNome'];
+			$rowcc['ccCodigo'] = $row['ccCodigo'];
+			$rowcc['ccCodigoReduzido'] = $row['ccCodigoReduzido'];
+			$rowcc['ccDiretorId'] = $row['ccDiretorId'];
+			$rowcc['ccGerenteOperacaoId'] = $row['ccGerenteOperacaoId'];
+			$rowcc['ccGerenteId'] = $row['ccGerenteId'];
+			$rowcc['ccEmpresaId'] = $row['ccEmpresaId'];
+			$rowcc['ccAtivo'] = $row['ccAtivo'];
+			$rowcc['ccTipo'] = $row['ccTipo'];
+			
+			$rowcchs['cchsId'] = $row['cchsId'];
+			$rowcchs['cchsNome'] = $row['cchsNome'];
+			$rowcchs['cchsCodigo'] = $row['cchsCodigo'];
+			$rowcchs['cchsCodigoReduzido'] = $row['cchsCodigoReduzido'];
+			$rowcchs['cchsDiretorId'] = $row['cchsDiretorId'];
+			$rowcchs['cchsGerenteOperacaoId'] = $row['cchsGerenteOperacaoId'];
+			$rowcchs['cchsGerenteId'] = $row['cchsGerenteId'];
+			$rowcchs['cchsEmpresaId'] = $row['cchsEmpresaId'];
+			$rowcchs['cchsAtivo'] = $row['cchsAtivo'];
+			$rowcchs['cchsTipo'] = $row['cchsTipo'];
+			
+			$rowh['hId'] = $row['hId'];
+			$rowh['hCentroDeCustoId'] = $row['hCentroDeCustoId'];
+			$rowh['hNome'] = $row['hNome'];
+			$rowh['hCoordenadorId'] = $row['hCoordenadorId'];
+			$rowh['hSupervisorId'] = $row['hSupervisorId'];
+			$rowh['hCodigo'] = $row['hCodigo'];
+			$rowh['hLiderId'] = $row['hLiderId'];
+			
+			
+			$rowhs['id'] = $row['id'];
+			$rowhs['colaborador_id'] = $row['colaborador_id'];
+			$rowhs['projeto_id'] = $row['projeto_id'];
+			$rowhs['timesheet_id'] = $row['timesheet_id'];
+			$rowhs['tipo'] = $row['tipo'];
+			$rowhs['inicio'] = $row['inicio'];
+			$rowhs['fim'] = $row['fim'];
+			$rowhs['dia'] = $row['dia'];
+			$rowhs['status'] = $row['status'];
+			$rowhs['justificativa'] = $row['justificativa'];
+			
+			$this->listCcDosOutrosColaborador[$row["ccId"]] = $rowcc;//o centro de custo do colaborador
+			$this->listCcMeuDosOutrosColaborador[$row["cchsId"]] = $rowcchs;//o centro de custo que a hora foi lançada (o meu)
+			$this->listOutrosColaborador[$row["cId"]] = $rowc;//o colaborador
+			$this->listHierarquiaDosOutrosColaborador[$row["hId"]] = $rowh;//a hierarquia do colaborador
+			$this->listHorasDosOutrosColaborador[$row["id"]] = $rowhs;//a hora lançada
+			
+		}
+	}
+
+	private function agruparHorasPorColaborador(){
+		foreach($this->listHorasDosMeusColaborador as $v){
+			if(!isset($this->listTotalHoraMeusColaboradores[$v['colaborador_id']])){
+				$this->listTotalHoraMeusColaboradores[$v['colaborador_id']] = array();
+			}
+			$this->listTotalHoraMeusColaboradores[$v['colaborador_id']][] = $v;
+		}
+	}
+}

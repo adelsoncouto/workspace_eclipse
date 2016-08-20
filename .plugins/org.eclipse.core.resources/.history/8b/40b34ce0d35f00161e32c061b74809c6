@@ -1,0 +1,34 @@
+<?php
+namespace Model\Client;
+
+use Model\Client\Client;
+
+class Servico extends Client{
+	
+	public function __construct($aRequest, $aLazy = true) {
+		parent::__construct($aRequest, $aLazy);
+	}
+	
+	public static function service($aJsonRequest, $aUrl){
+		$ch = curl_init();
+		curl_setopt($ch, CURLOPT_URL,            $aUrl);
+		curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1 );
+		curl_setopt($ch, CURLOPT_POST,           1 );
+		curl_setopt($ch, CURLOPT_POSTFIELDS,     $aJsonRequest );
+		curl_setopt($ch, CURLOPT_HTTPHEADER,     
+			array(
+				'Pragma: no-cache' 
+				,'Accept-Encoding: gzip, deflate, br' 
+				,'Accept-Language: pt-BR,pt;q=0.8,en-US;q=0.6,en;q=0.4' 
+				,'User-Agent: Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/52.0.2743.116 Safari/537.36' 
+				,'Content-Type: application/json;charset=UTF-8' 
+				,'Accept: application/json, text/plain, */*' 
+				,'Cache-Control: no-cache' 
+				,'Connection: keep-alive' 
+			)
+		);
+		$result=curl_exec ($ch);
+		return $result;
+	}
+	
+}

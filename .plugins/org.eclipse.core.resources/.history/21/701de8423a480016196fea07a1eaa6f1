@@ -1,0 +1,25 @@
+<?php
+namespace Model\Timesheet\Historico;
+
+
+class DividiHora{
+	
+	/** @var array(\Model\Model\Horas) $_listHora */
+	private $_listHora = [];
+	private $_listHoraPorDiaAndTipo = [];
+	
+	
+	/** @var \Model\Model\Horas $aListHora */
+	public function __construct($aListHora){
+		$this->_listHora = $aListHora;
+		
+	}
+	
+	/**
+	* Método responsável por agrupar as horas por dia e tipo
+	*/
+	private function agruparHorasPorDia(){
+		
+	}
+	
+}
