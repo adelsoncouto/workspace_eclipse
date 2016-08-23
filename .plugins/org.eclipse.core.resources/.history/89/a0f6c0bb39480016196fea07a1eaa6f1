@@ -1,9 +1,0 @@
-<?php
-namespace Model\Timesheet\Historico;
-
-
-class DividiHora{
-	
-	
-	
-}
